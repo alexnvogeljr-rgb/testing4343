@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Padres Player Stats Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark">SD</span>
+        <div class="brand-text">
+          <h1>Padres Player Stats Tracker</h1>
+          <p>Comprehensive player-by-player stats &middot; powered by the MLB Stats API</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="control">
+          <span>Season</span>
+          <select id="seasonSelect"></select>
+        </label>
+        <label class="control">
+          <span>Roster</span>
+          <select id="rosterSelect">
+            <option value="active">Active</option>
+            <option value="40Man">40-Man</option>
+            <option value="fullSeason">Full Season</option>
+          </select>
+        </label>
+        <label class="control control--search">
+          <span>Search</span>
+          <input id="searchInput" type="search" placeholder="Filter by name or position…" />
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Roster column -->
+    <section id="rosterPanel" class="roster-panel" aria-label="Padres roster">
+      <div class="panel-head">
+        <h2>Roster</h2>
+        <span id="rosterCount" class="badge"></span>
+      </div>
+      <div id="rosterList" class="roster-list" role="list"></div>
+    </section>
+
+    <!-- Detail column -->
+    <section id="detailPanel" class="detail-panel" aria-live="polite">
+      <div id="detailPlaceholder" class="placeholder">
+        <p>Select a player to view comprehensive stats.</p>
+      </div>
+      <div id="detailContent" class="detail-content hidden"></div>
+    </section>
+  </main>
+
+  <div id="statusBar" class="status-bar" role="status"></div>
+
+  <footer class="site-footer">
+    <p>Unofficial personal tracker. Data &copy; MLB Advanced Media via the public MLB Stats API. Not affiliated with MLB or the San Diego Padres.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
