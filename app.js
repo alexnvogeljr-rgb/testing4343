@@ -13,6 +13,18 @@
   const headshot = (id, w = 120) =>
     `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${w},q_auto:best/v1/people/${id}/headshot/67/current`;
 
+  const teamLogo = (id) => `https://www.mlbstatic.com/team-logos/${id}.svg`;
+
+  // Division id -> {league, name, order} for grouping standings (fallback if hydrate is absent).
+  const DIVISIONS = {
+    201: { league: "AL", name: "AL East", order: 0 },
+    202: { league: "AL", name: "AL Central", order: 1 },
+    200: { league: "AL", name: "AL West", order: 2 },
+    204: { league: "NL", name: "NL East", order: 0 },
+    205: { league: "NL", name: "NL Central", order: 1 },
+    203: { league: "NL", name: "NL West", order: 2 },
+  };
+
   // Column layouts per stat group: [statKey, columnLabel].
   const COLUMNS = {
     hitting: [
@@ -70,6 +82,9 @@
     placeholder: document.getElementById("detailPlaceholder"),
     content: document.getElementById("detailContent"),
     status: document.getElementById("statusBar"),
+    schedule: document.getElementById("scheduleContent"),
+    standings: document.getElementById("standingsContent"),
+    standingsLabel: document.getElementById("standingsSeasonLabel"),
   };
 
   let currentRoster = [];   // [{id, name, number, position, posType}]
@@ -366,14 +381,212 @@
     els.content.classList.remove("hidden");
   }
 
+  // ===================== SCHEDULE =====================
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  let scheduleLoaded = false;
+  async function loadSchedule() {
+    const today = new Date();
+    const end = new Date();
+    end.setDate(end.getDate() + 60);
+    loading("Loading schedule…");
+    els.schedule.innerHTML = "";
+    try {
+      const data = await fetchJSON(
+        `${API}/schedule?sportId=1&teamId=${TEAM_ID}` +
+        `&startDate=${ymd(today)}&endDate=${ymd(end)}&hydrate=probablePitcher,team`
+      );
+      renderSchedule(data, today);
+      scheduleLoaded = true;
+      setStatus("Schedule loaded.");
+    } catch (err) {
+      setStatus(`Could not load schedule: ${esc(err.message)}`, true);
+    }
+  }
+
+  function renderSchedule(data, today) {
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const games = [];
+    (data.dates || []).forEach((d) => (d.games || []).forEach((g) => games.push(g)));
+    const upcoming = games
+      .filter((g) => g.status?.abstractGameState !== "Final" && new Date(g.gameDate) >= startOfToday)
+      .sort((a, b) => new Date(a.gameDate) - new Date(b.gameDate));
+
+    if (!upcoming.length) {
+      els.schedule.innerHTML = `<p class="empty-note">No upcoming games in the next 60 days (the season may be over or not yet started).</p>`;
+      return;
+    }
+
+    // Group by calendar day.
+    const byDay = new Map();
+    upcoming.forEach((g) => {
+      const day = new Date(g.gameDate).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day).push(g);
+    });
+
+    els.schedule.innerHTML = [...byDay.entries()]
+      .map(([day, gs]) => `
+        <div class="sched-day">
+          <div class="sched-day-label">${esc(day)}</div>
+          ${gs.map(gameCard).join("")}
+        </div>`)
+      .join("");
+  }
+
+  function gameCard(g) {
+    const home = g.teams?.home || {}, away = g.teams?.away || {};
+    const padresHome = home.team?.id === TEAM_ID;
+    const opp = padresHome ? away : home;
+    const side = padresHome ? "vs" : "@";
+    const oppName = opp.team?.name || "TBD";
+    const oppId = opp.team?.id;
+
+    const dt = new Date(g.gameDate);
+    const isTBD = g.status?.startTimeTBD;
+    const time = isTBD ? "TBD" : dt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const dayShort = dt.toLocaleDateString(undefined, { weekday: "short" });
+
+    const state = g.status?.abstractGameState;
+    const statusTag = state === "Live" ? `<span class="tag-status">LIVE</span>` : "";
+    const dh = g.doubleHeader === "Y" ? ` <span class="game-meta">(DH G${g.gameNumber})</span>` : "";
+
+    const sdPitcher = (padresHome ? home : away).probablePitcher?.fullName;
+    const oppPitcher = opp.probablePitcher?.fullName;
+    const probables = (sdPitcher || oppPitcher)
+      ? `<div class="game-probables">Prob: <b>SD</b> ${esc(sdPitcher || "TBD")} &middot; <b>${esc(oppName.split(" ").pop())}</b> ${esc(oppPitcher || "TBD")}</div>`
+      : "";
+
+    return `
+      <div class="game-card">
+        <div class="game-side">${side}</div>
+        ${oppId ? `<img class="opp-logo" src="${teamLogo(oppId)}" alt="" loading="lazy" />` : ""}
+        <div class="game-main">
+          <div class="game-matchup">${esc(oppName)}${statusTag}${dh}</div>
+          <div class="game-meta">${esc(g.venue?.name || "")}</div>
+          ${probables}
+        </div>
+        <div class="game-time"><span class="day">${esc(dayShort)}</span><br/>${esc(time)}</div>
+      </div>`;
+  }
+
+  // ===================== STANDINGS =====================
+  const SCOLS = [
+    ["wins", "W"], ["losses", "L"], ["winningPercentage", "PCT"], ["gamesBack", "GB"],
+    ["wildCardGamesBack", "WCGB"], ["__l10", "L10"], ["__streak", "STRK"],
+    ["runsScored", "RS"], ["runsAllowed", "RA"], ["__diff", "DIFF"],
+  ];
+
+  function srVal(tr, key) {
+    switch (key) {
+      case "__l10": {
+        const s = (tr.records?.splitRecords || []).find((r) => r.type === "lastTen");
+        return s ? `${s.wins}-${s.losses}` : "—";
+      }
+      case "__streak": return tr.streak?.streakCode || "—";
+      case "__diff": {
+        const d = tr.runDifferential ?? (Number(tr.runsScored) - Number(tr.runsAllowed));
+        if (Number.isNaN(d) || d == null) return "—";
+        return d > 0 ? `+${d}` : String(d);
+      }
+      default: {
+        const v = tr[key];
+        return v === undefined || v === null || v === "" ? "—" : v;
+      }
+    }
+  }
+
+  let standingsLoadedSeason = null;
+  async function loadStandings() {
+    const season = els.season.value;
+    els.standingsLabel.textContent = `${season} regular season`;
+    loading("Loading standings…");
+    els.standings.innerHTML = "";
+    try {
+      const data = await fetchJSON(
+        `${API}/standings?leagueId=103,104&season=${season}` +
+        `&standingsType=regularSeason&hydrate=team,division`
+      );
+      renderStandings(data);
+      standingsLoadedSeason = season;
+      setStatus("Standings loaded.");
+    } catch (err) {
+      setStatus(`Could not load standings: ${esc(err.message)}`, true);
+    }
+  }
+
+  function renderStandings(data) {
+    const records = data.records || [];
+    if (!records.length) {
+      els.standings.innerHTML = `<p class="empty-note">No standings available for this season.</p>`;
+      return;
+    }
+    // Attach division metadata and group by league.
+    const leagues = { AL: [], NL: [] };
+    records.forEach((rec) => {
+      const meta = DIVISIONS[rec.division?.id] || { league: "AL", name: rec.division?.name || "Division", order: 9 };
+      const name = rec.division?.name || meta.name;
+      (leagues[meta.league] || (leagues[meta.league] = [])).push({ name, order: meta.order, rec });
+    });
+
+    const leagueBlock = (label, divs) => {
+      if (!divs.length) return "";
+      divs.sort((a, b) => a.order - b.order);
+      return `<div class="league-block"><h3>${label}</h3>${divs.map(divisionTable).join("")}</div>`;
+    };
+
+    els.standings.innerHTML = `<div class="standings-leagues">
+      ${leagueBlock("American League", leagues.AL)}
+      ${leagueBlock("National League", leagues.NL)}
+    </div>`;
+  }
+
+  function divisionTable({ name, rec }) {
+    const teams = [...(rec.teamRecords || [])].sort(
+      (a, b) => (Number(a.divisionRank) || 99) - (Number(b.divisionRank) || 99)
+    );
+    const header = `<tr><th>Team</th>${SCOLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr>`;
+    const rows = teams
+      .map((tr) => {
+        const isPad = tr.team?.id === TEAM_ID;
+        const cells = SCOLS.map(([k]) => `<td>${esc(srVal(tr, k))}</td>`).join("");
+        return `<tr class="${isPad ? "is-padres" : ""}">
+          <td><span class="team-cell">${tr.team?.id ? `<img src="${teamLogo(tr.team.id)}" alt="" loading="lazy"/>` : ""}${esc(tr.team?.name || "—")}</span></td>
+          ${cells}
+        </tr>`;
+      })
+      .join("");
+    return `<div class="division-table">
+      <div class="division-name">${esc(name)}</div>
+      <table class="standings-tbl"><thead>${header}</thead><tbody>${rows}</tbody></table>
+    </div>`;
+  }
+
+  // ===================== VIEW SWITCHING =====================
+  function showView(view) {
+    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+    document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${view}`));
+    document.body.classList.toggle("hide-players-controls", view !== "players");
+
+    if (view === "schedule" && !scheduleLoaded) loadSchedule();
+    if (view === "standings" && standingsLoadedSeason !== els.season.value) loadStandings();
+  }
+
   // --- Events ---
   els.season.addEventListener("change", () => {
+    // Season affects players + standings; invalidate caches that depend on it.
     els.content.classList.add("hidden");
     els.placeholder.classList.remove("hidden");
+    standingsLoadedSeason = null;
     loadRoster();
+    const active = document.querySelector(".tab.active")?.dataset.view;
+    if (active === "standings") loadStandings();
   });
   els.roster.addEventListener("change", loadRoster);
   els.search.addEventListener("input", renderRoster);
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.addEventListener("click", () => showView(t.dataset.view))
+  );
 
   // --- Boot ---
   initSeasons();

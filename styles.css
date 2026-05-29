@@ -303,3 +303,122 @@ table.stats tr:hover td { background: #fdf6e3; }
   margin-right: 6px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Nav tabs ---------- */
+.tabs {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  gap: 4px;
+}
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 18px 12px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -4px; /* sit on the gold header border */
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.tab:hover { color: #fff; }
+.tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+/* ---------- Views ---------- */
+.main { min-height: 60vh; }
+.view { display: none; }
+.view.active { display: block; }
+.players-only { display: flex; }
+body.hide-players-controls .players-only { display: none; }
+
+.page-head {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 20px 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.page-head h2 { margin: 0; font-size: 22px; }
+.page-sub { color: var(--muted); font-size: 13px; }
+
+/* ---------- Schedule ---------- */
+.schedule-content { max-width: 1200px; margin: 0 auto; padding: 12px 20px 20px; }
+.sched-day { margin-top: 18px; }
+.sched-day-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+}
+.game-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  margin-bottom: 10px;
+}
+.game-side { font-weight: 800; font-size: 13px; color: var(--brown); min-width: 34px; text-align: center; }
+.opp-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
+.game-main { flex: 1 1 auto; min-width: 0; }
+.game-matchup { font-weight: 700; font-size: 15px; }
+.game-meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.game-time { text-align: right; font-weight: 700; color: var(--brown-light); white-space: nowrap; }
+.game-time .day { font-size: 12px; color: var(--muted); font-weight: 500; }
+.game-probables { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.game-probables b { color: var(--ink); font-weight: 600; }
+.tag-status {
+  display: inline-block;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--gold); color: var(--brown);
+  margin-left: 6px; vertical-align: 1px;
+}
+
+/* ---------- Standings ---------- */
+.standings-content { max-width: 1200px; margin: 0 auto; padding: 12px 20px 20px; }
+.standings-leagues { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+@media (max-width: 860px) { .standings-leagues { grid-template-columns: 1fr; } }
+.league-block h3 {
+  font-size: 16px; margin: 8px 0 12px;
+  padding-bottom: 6px; border-bottom: 2px solid var(--gold);
+}
+.division-table {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.division-name {
+  padding: 9px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  background: var(--brown);
+  color: var(--gold);
+}
+table.standings-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+table.standings-tbl th, table.standings-tbl td { padding: 6px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+table.standings-tbl th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); background: #fbf8f3; }
+table.standings-tbl td:first-child, table.standings-tbl th:first-child { text-align: left; width: 100%; }
+table.standings-tbl tr:last-child td { border-bottom: none; }
+.team-cell { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.team-cell img { width: 20px; height: 20px; object-fit: contain; }
+tr.is-padres td { background: #fdf6e3; }
+tr.is-padres .team-cell { color: var(--brown); font-weight: 800; }
+.pos-good { color: var(--good); font-weight: 700; }
+

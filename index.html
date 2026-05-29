@@ -12,8 +12,8 @@
       <div class="brand">
         <span class="brand-mark">SD</span>
         <div class="brand-text">
-          <h1>Padres Player Stats Tracker</h1>
-          <p>Comprehensive player-by-player stats &middot; powered by the MLB Stats API</p>
+          <h1>Padres Tracker</h1>
+          <p>Players, schedule &amp; standings &middot; powered by the MLB Stats API</p>
         </div>
       </div>
       <div class="controls">
@@ -21,7 +21,7 @@
           <span>Season</span>
           <select id="seasonSelect"></select>
         </label>
-        <label class="control">
+        <label class="control players-only">
           <span>Roster</span>
           <select id="rosterSelect">
             <option value="active">Active</option>
@@ -29,30 +29,55 @@
             <option value="fullSeason">Full Season</option>
           </select>
         </label>
-        <label class="control control--search">
+        <label class="control control--search players-only">
           <span>Search</span>
           <input id="searchInput" type="search" placeholder="Filter by name or position…" />
         </label>
       </div>
     </div>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab active" data-view="players">Players</button>
+      <button class="tab" data-view="schedule">Schedule</button>
+      <button class="tab" data-view="standings">Standings</button>
+    </nav>
   </header>
 
-  <main class="layout">
-    <!-- Roster column -->
-    <section id="rosterPanel" class="roster-panel" aria-label="Padres roster">
-      <div class="panel-head">
-        <h2>Roster</h2>
-        <span id="rosterCount" class="badge"></span>
+  <main class="main">
+    <!-- PLAYERS VIEW -->
+    <section id="view-players" class="view active">
+      <div class="layout">
+        <section id="rosterPanel" class="roster-panel" aria-label="Padres roster">
+          <div class="panel-head">
+            <h2>Roster</h2>
+            <span id="rosterCount" class="badge"></span>
+          </div>
+          <div id="rosterList" class="roster-list" role="list"></div>
+        </section>
+        <section id="detailPanel" class="detail-panel" aria-live="polite">
+          <div id="detailPlaceholder" class="placeholder">
+            <p>Select a player to view comprehensive stats.</p>
+          </div>
+          <div id="detailContent" class="detail-content hidden"></div>
+        </section>
       </div>
-      <div id="rosterList" class="roster-list" role="list"></div>
     </section>
 
-    <!-- Detail column -->
-    <section id="detailPanel" class="detail-panel" aria-live="polite">
-      <div id="detailPlaceholder" class="placeholder">
-        <p>Select a player to view comprehensive stats.</p>
+    <!-- SCHEDULE VIEW -->
+    <section id="view-schedule" class="view">
+      <div class="page-head">
+        <h2>Upcoming Schedule</h2>
+        <span class="page-sub">San Diego Padres &middot; next 60 days</span>
       </div>
-      <div id="detailContent" class="detail-content hidden"></div>
+      <div id="scheduleContent" class="schedule-content"></div>
+    </section>
+
+    <!-- STANDINGS VIEW -->
+    <section id="view-standings" class="view">
+      <div class="page-head">
+        <h2>MLB Standings</h2>
+        <span class="page-sub" id="standingsSeasonLabel"></span>
+      </div>
+      <div id="standingsContent" class="standings-content"></div>
     </section>
   </main>
 

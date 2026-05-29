@@ -9,13 +9,24 @@ key, and nothing to pay for.**
 
 ## Features
 
+Three pages, switchable from the top nav:
+
+**Players**
 - **Full roster** for any season (Active, 40-Man, or Full Season).
-- **Player-by-player detail**: click any player to see their bio plus
-  comprehensive **hitting, pitching, and fielding** stat lines.
-- **Season selector** (2015 → current year).
-- **Live search/filter** by name or position.
-- Roster grouped into **Position Players** and **Pitchers**, with headshots.
-- Padres-themed UI, fully responsive.
+- **Player-by-player detail**: bio plus **standard**, **advanced**
+  (ISO, BABIP, BB%, K%, K/9, BB/9…), and **expected Statcast** stats
+  (xBA, xSLG, xwOBA) for hitting, pitching, and fielding.
+- **Live search/filter** by name or position; grouped Position Players / Pitchers.
+
+**Schedule**
+- Padres' **upcoming games** for the next 60 days, grouped by day, with
+  opponent logos, home/away, first pitch (local time), venue, and probable pitchers.
+
+**Standings**
+- **All six MLB divisions** (AL & NL) for the selected season: W, L, PCT, GB,
+  WCGB, L10, streak, runs scored/allowed, run differential — Padres row highlighted.
+
+Plus a **season selector** (2015 → current year) and a Padres-themed, responsive UI.
 
 ## Running it
 
