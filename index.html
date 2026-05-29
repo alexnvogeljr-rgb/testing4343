@@ -36,15 +36,25 @@
       </div>
     </div>
     <nav class="tabs" aria-label="Sections">
-      <button class="tab active" data-view="players">Players</button>
+      <button class="tab active" data-view="home">Home</button>
+      <button class="tab" data-view="players">Players</button>
       <button class="tab" data-view="schedule">Schedule</button>
       <button class="tab" data-view="standings">Standings</button>
     </nav>
   </header>
 
   <main class="main">
+    <!-- HOME VIEW (last game lineup on the field) -->
+    <section id="view-home" class="view active">
+      <div class="page-head">
+        <h2>Last Game Lineup</h2>
+        <span class="page-sub" id="homeGameSub"></span>
+      </div>
+      <div id="homeContent" class="home-content"></div>
+    </section>
+
     <!-- PLAYERS VIEW -->
-    <section id="view-players" class="view active">
+    <section id="view-players" class="view">
       <div class="layout">
         <section id="rosterPanel" class="roster-panel" aria-label="Padres roster">
           <div class="panel-head">

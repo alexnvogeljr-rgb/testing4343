@@ -9,7 +9,14 @@ key, and nothing to pay for.**
 
 ## Features
 
-Three pages, switchable from the top nav:
+Four pages, switchable from the top nav:
+
+**Home** (default)
+- A **baseball-diamond view** of the Padres' **most recent completed game**:
+  each starter's headshot is placed at the position they played, with their
+  game line (e.g. `2-4, HR` for hitters; `6.0 IP, 7 K, 1 ER` for the starter).
+- A score banner (result, opponent, date, venue) and a DH chip below the field.
+- Click any player to jump to their full stats on the Players page.
 
 **Players**
 - **Full roster** for any season (Active, 40-Man, or Full Season).

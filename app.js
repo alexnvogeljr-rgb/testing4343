@@ -85,6 +85,8 @@
     schedule: document.getElementById("scheduleContent"),
     standings: document.getElementById("standingsContent"),
     standingsLabel: document.getElementById("standingsSeasonLabel"),
+    home: document.getElementById("homeContent"),
+    homeSub: document.getElementById("homeGameSub"),
   };
 
   let currentRoster = [];   // [{id, name, number, position, posType}]
@@ -381,6 +383,154 @@
     els.content.classList.remove("hidden");
   }
 
+  // ===================== HOME (last game lineup) =====================
+  // Defensive position -> [left%, top%] on the field diagram (outfield at top).
+  const POS_COORDS = {
+    P: [50, 60], C: [50, 89],
+    "1B": [72, 62], "2B": [61, 49], "3B": [28, 62], SS: [39, 49],
+    LF: [23, 26], CF: [50, 14], RF: [77, 26],
+  };
+
+  // Build a lineup chip from a boxscore player entry.
+  function chipFor(pl, kind) {
+    const c = {
+      id: pl.person?.id,
+      name: pl.person?.fullName || "",
+      num: pl.jerseyNumber || "",
+      pos: pl.position?.abbreviation || "",
+      line: "",
+    };
+    if (kind === "pit") {
+      const s = pl.stats?.pitching || {};
+      c.line = [
+        s.inningsPitched != null ? `${s.inningsPitched} IP` : null,
+        s.strikeOuts != null ? `${s.strikeOuts} K` : null,
+        s.earnedRuns != null ? `${s.earnedRuns} ER` : null,
+      ].filter(Boolean).join(", ");
+    } else {
+      const s = pl.stats?.batting || {};
+      const parts = [];
+      if (s.atBats != null) parts.push(`${s.hits ?? 0}-${s.atBats}`);
+      if (s.homeRuns) parts.push(`${s.homeRuns} HR`);
+      if (s.rbi) parts.push(`${s.rbi} RBI`);
+      c.line = parts.join(", ");
+    }
+    return c;
+  }
+
+  let homeLoaded = false;
+  async function loadHome() {
+    const season = els.season.value;
+    loading("Finding the last game…");
+    els.home.innerHTML = "";
+    els.homeSub.textContent = "";
+    try {
+      const sched = await fetchJSON(
+        `${API}/schedule?sportId=1&teamId=${TEAM_ID}&season=${season}&hydrate=team,linescore`
+      );
+      const games = [];
+      (sched.dates || []).forEach((d) => (d.games || []).forEach((g) => games.push(g)));
+      const now = new Date();
+      const game = games
+        .filter((g) => g.status?.abstractGameState === "Final" && new Date(g.gameDate) <= now)
+        .sort((a, b) => new Date(b.gameDate) - new Date(a.gameDate) || b.gamePk - a.gamePk)[0];
+
+      if (!game) {
+        els.home.innerHTML = `<p class="empty-note">No completed games found for ${season}. Pick a different season from the dropdown.</p>`;
+        setStatus(`No completed ${season} games yet.`);
+        homeLoaded = true;
+        return;
+      }
+      const box = await fetchJSON(`${API}/game/${game.gamePk}/boxscore`);
+      renderHome(game, box);
+      homeLoaded = true;
+      setStatus("Last game lineup loaded.");
+    } catch (err) {
+      setStatus(`Could not load last game: ${esc(err.message)}`, true);
+    }
+  }
+
+  function renderHome(game, box) {
+    const padKey = game.teams?.home?.team?.id === TEAM_ID ? "home" : "away";
+    const oppKey = padKey === "home" ? "away" : "home";
+    const pad = game.teams[padKey] || {};
+    const opp = game.teams[oppKey] || {};
+    const padScore = pad.score ?? 0, oppScore = opp.score ?? 0;
+    const win = padScore > oppScore;
+    const dt = new Date(game.gameDate);
+    const dateStr = dt.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const homeAway = padKey === "home" ? "Home" : "Away";
+
+    const banner = `
+      <div class="game-banner">
+        <div class="gb-team"><img src="${teamLogo(TEAM_ID)}" alt=""/>Padres</div>
+        <div class="gb-score">${padScore}</div>
+        <div class="gb-result ${win ? "win" : "loss"}">${win ? "W" : "L"}</div>
+        <div class="gb-score">${oppScore}</div>
+        <div class="gb-team">${opp.team?.id ? `<img src="${teamLogo(opp.team.id)}" alt=""/>` : ""}${esc(opp.team?.name || "Opponent")}</div>
+        <div class="gb-date">${esc(dateStr)} &middot; ${homeAway} &middot; ${esc(game.venue?.name || "")}</div>
+      </div>`;
+
+    // Pull the Padres' starters from the boxscore.
+    const boxPad = box.teams?.home?.team?.id === TEAM_ID ? box.teams.home : box.teams.away;
+    const players = boxPad?.players || {};
+    const onField = {};
+    const bench = [];
+    Object.values(players).forEach((pl) => {
+      const bo = pl.battingOrder;
+      if (!bo || !bo.endsWith("00")) return; // starters end in "00"
+      const pos = pl.position?.abbreviation;
+      const chip = chipFor(pl, "bat");
+      if (pos === "DH") bench.push(chip);
+      else if (POS_COORDS[pos] && !onField[pos]) onField[pos] = chip;
+    });
+    // Starting pitcher (first pitcher used); overrides any P slot.
+    const spId = boxPad?.pitchers?.[0];
+    const sp = spId != null ? players[`ID${spId}`] : null;
+    if (sp) onField["P"] = chipFor(sp, "pit");
+
+    const chips = Object.entries(onField)
+      .map(([pos, c]) => {
+        const [left, top] = POS_COORDS[pos] || [];
+        if (left == null) return "";
+        const title = esc(c.name + (c.line ? ` — ${c.line}` : ""));
+        return `<button class="fld-chip" style="left:${left}%;top:${top}%"
+            data-id="${c.id}" data-name="${esc(c.name)}" data-num="${esc(c.num)}" data-pos="${esc(c.pos)}" title="${title}">
+          <img src="${headshot(c.id, 80)}" alt=""/>
+          <span class="pos">${esc(pos)}</span>
+          <span class="nm">${esc(c.name)}</span>
+          ${c.line ? `<span class="ln">${esc(c.line)}</span>` : ""}
+        </button>`;
+      })
+      .join("");
+
+    const benchHtml = bench.length
+      ? `<div class="bench"><div class="bench-label">Designated Hitter</div>${bench
+          .map((c) => `<button class="bench-chip fld-chip-link" data-id="${c.id}" data-name="${esc(c.name)}" data-num="${esc(c.num)}" data-pos="${esc(c.pos)}">
+              <img src="${headshot(c.id, 80)}" alt=""/>
+              <span class="pos">${esc(c.pos)}</span>
+              <span class="nm">${esc(c.name)}</span>
+              ${c.line ? `<span class="ln">${esc(c.line)}</span>` : ""}
+            </button>`)
+          .join("")}</div>`
+      : "";
+
+    els.homeSub.textContent = `Padres ${padScore}–${oppScore} ${win ? "W" : "L"} vs ${opp.team?.name || ""}`;
+    els.home.innerHTML = `${banner}
+      <div class="field"><div class="infield"></div><div class="mound"></div>${chips}</div>
+      ${benchHtml}`;
+
+    // Clicking a player jumps to the Players page with their detail open.
+    els.home.querySelectorAll(".fld-chip, .bench-chip").forEach((el) => {
+      el.addEventListener("click", () => {
+        const d = el.dataset;
+        if (!d.id) return;
+        showView("players");
+        selectPlayer({ id: Number(d.id), name: d.name, number: d.num, position: d.pos, posType: "" });
+      });
+    });
+  }
+
   // ===================== SCHEDULE =====================
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -568,19 +718,22 @@
     document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${view}`));
     document.body.classList.toggle("hide-players-controls", view !== "players");
 
+    if (view === "home" && !homeLoaded) loadHome();
     if (view === "schedule" && !scheduleLoaded) loadSchedule();
     if (view === "standings" && standingsLoadedSeason !== els.season.value) loadStandings();
   }
 
   // --- Events ---
   els.season.addEventListener("change", () => {
-    // Season affects players + standings; invalidate caches that depend on it.
+    // Season affects home, players, and standings; invalidate their caches.
     els.content.classList.add("hidden");
     els.placeholder.classList.remove("hidden");
+    homeLoaded = false;
     standingsLoadedSeason = null;
     loadRoster();
     const active = document.querySelector(".tab.active")?.dataset.view;
-    if (active === "standings") loadStandings();
+    if (active === "home") loadHome();
+    else if (active === "standings") loadStandings();
   });
   els.roster.addEventListener("change", loadRoster);
   els.search.addEventListener("input", renderRoster);
@@ -590,5 +743,6 @@
 
   // --- Boot ---
   initSeasons();
-  loadRoster();
+  loadRoster();      // ready the Players roster in the background
+  showView("home");  // default landing: last game's lineup on the field
 })();

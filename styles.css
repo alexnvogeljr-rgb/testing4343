@@ -422,3 +422,119 @@ tr.is-padres td { background: #fdf6e3; }
 tr.is-padres .team-cell { color: var(--brown); font-weight: 800; }
 .pos-good { color: var(--good); font-weight: 700; }
 
+/* ---------- Home: last-game lineup on the field ---------- */
+.home-content { max-width: 1100px; margin: 0 auto; padding: 12px 20px 24px; }
+
+.game-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.game-banner .gb-team { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.game-banner .gb-team img { width: 32px; height: 32px; object-fit: contain; }
+.game-banner .gb-score { font-size: 26px; font-weight: 900; color: var(--brown); }
+.game-banner .gb-result {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+  padding: 2px 9px; border-radius: 999px;
+}
+.game-banner .gb-result.win { background: var(--good); color: #fff; }
+.game-banner .gb-result.loss { background: var(--bad); color: #fff; }
+.game-banner .gb-date { width: 100%; text-align: center; color: var(--muted); font-size: 12.5px; }
+
+/* The field */
+.field {
+  position: relative;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  border-radius: 50% 50% 8px 8px / 60% 60% 8px 8px;
+  background:
+    radial-gradient(circle at 50% 92%, #d9b98c 0 16%, transparent 16.4%),
+    linear-gradient(#3f8a3a, #357a31);
+  border: 3px solid #2b5e28;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+/* mowed-grass stripes */
+.field::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 28px, transparent 28px 56px);
+  pointer-events: none;
+}
+/* infield dirt diamond */
+.field .infield {
+  position: absolute;
+  left: 50%; top: 64%;
+  width: 46%; height: 46%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: #cda36b;
+  border: 2px solid #b8884e;
+  border-radius: 6px;
+}
+.field .mound {
+  position: absolute; left: 50%; top: 60%;
+  width: 9%; height: 9%;
+  transform: translate(-50%, -50%);
+  background: #cda36b; border-radius: 50%;
+}
+
+.fld-chip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 84px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 2;
+}
+.fld-chip img {
+  width: 46px; height: 46px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  border: 2px solid var(--gold);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  transition: transform 0.1s ease;
+}
+.fld-chip:hover img { transform: scale(1.12); }
+.fld-chip .pos {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+  color: var(--brown); background: var(--gold);
+  padding: 0 6px; border-radius: 999px;
+}
+.fld-chip .nm {
+  font-size: 11px; font-weight: 700; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+  line-height: 1.15;
+}
+.fld-chip .ln { font-size: 10px; color: #fdf0c4; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
+
+/* DH / extras strip below the field */
+.bench {
+  max-width: 680px; margin: 16px auto 0;
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center;
+}
+.bench-label { width: 100%; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); }
+.bench .bench-chip {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 12px 5px 5px; cursor: pointer; box-shadow: var(--shadow);
+}
+.bench .bench-chip img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold); }
+.bench .bench-chip .pos { font-size: 10px; font-weight: 800; color: var(--brown); background: var(--gold); padding: 0 6px; border-radius: 999px; }
+.bench .bench-chip .nm { font-weight: 700; font-size: 13px; }
+.bench .bench-chip .ln { font-size: 11px; color: var(--muted); }
+
