@@ -8,4 +8,4 @@
 //
 //   window.SAVANT_PROXY = "https://padres-savant.YOUR-NAME.workers.dev";
 // ---------------------------------------------------------------------------
-window.SAVANT_PROXY = "";
+window.SAVANT_PROXY = "https://padres-savant.alexnvogeljr.workers.dev";
