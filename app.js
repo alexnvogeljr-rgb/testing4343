@@ -35,6 +35,31 @@
   };
   const GROUP_TITLES = { hitting: "Hitting", pitching: "Pitching", fielding: "Fielding" };
 
+  // Friendly labels for advanced (seasonAdvanced) stat fields.
+  const LABELS = {
+    // hitting (advanced)
+    plateAppearances: "PA", totalBases: "TB", extraBaseHits: "XBH", hitByPitch: "HBP",
+    intentionalWalks: "IBB", sacBunts: "SAC", sacFlies: "SF", groundIntoDoublePlay: "GIDP",
+    numberOfPitches: "Pit", pitchesPerPlateAppearance: "P/PA", walksPerPlateAppearance: "BB%",
+    strikeoutsPerPlateAppearance: "K%", homeRunsPerPlateAppearance: "HR/PA",
+    walksPerStrikeout: "BB/K", iso: "ISO", babip: "BABIP", groundOutsToAirouts: "GO/AO",
+    atBatsPerHomeRun: "AB/HR", stolenBasePercentage: "SB%", reachedOnError: "ROE",
+    flyOuts: "FO", groundOuts: "GO", lineOuts: "LO", popOuts: "PU", catchersInterference: "CI",
+    // pitching (advanced)
+    strikeoutsPer9Inn: "K/9", walksPer9Inn: "BB/9", hitsPer9Inn: "H/9", homeRunsPer9: "HR/9",
+    runsScoredPer9: "R/9", strikeoutWalkRatio: "K/BB", strikePercentage: "Strike%",
+    pitchesPerInning: "P/IP", battersFaced: "BF", strikes: "Strikes", balls: "Balls",
+    winPercentage: "W%", outs: "Outs", inheritedRunners: "IR", inheritedRunnersScored: "IRS",
+    wildPitches: "WP", balks: "BK", hitBatsmen: "HB", pickoffs: "PK",
+  };
+  // For the Statcast "expectedStatistics" block, the generic keys mean expected values.
+  const EXPECTED_LABELS = {
+    avg: "xBA", slg: "xSLG", obp: "xOBP", woba: "xwOBA", wobaCon: "xwOBAcon",
+    era: "xERA", plateAppearances: "PA", battersFaced: "BF",
+  };
+  // Preferred leading order for the expected-stats table.
+  const EXPECTED_ORDER = ["plateAppearances", "battersFaced", "avg", "obp", "slg", "woba", "wobaCon", "era"];
+
   // --- DOM refs ---
   const els = {
     season: document.getElementById("seasonSelect"),
@@ -49,7 +74,7 @@
 
   let currentRoster = [];   // [{id, name, number, position, posType}]
   let selectedId = null;
-  const statsCache = new Map(); // key `${id}:${season}` -> {bio, statsByGroup}
+  const statsCache = new Map(); // key `${id}:${season}` -> {bio, groups}
 
   // --- Helpers ---
   const setStatus = (msg, isError = false) => {
@@ -184,19 +209,25 @@
 
     const [bioData, statsData] = await Promise.all([
       fetchJSON(`${API}/people/${id}`),
-      fetchJSON(`${API}/people/${id}/stats?stats=season&season=${season}&group=hitting,pitching,fielding`),
+      fetchJSON(
+        `${API}/people/${id}/stats?stats=season,seasonAdvanced,expectedStatistics` +
+        `&season=${season}&group=hitting,pitching,fielding`
+      ),
     ]);
 
     const bio = bioData.people?.[0] || {};
-    const statsByGroup = {};
+    // groups[group][type] = splits[]  e.g. groups.hitting.season, groups.hitting.seasonAdvanced
+    const groups = {};
     (statsData.stats || []).forEach((block) => {
       // The API reports the group name in lowercase ("hitting"); normalize so
       // lookups are case-insensitive regardless of how the API formats it.
       const group = block.group?.displayName?.toLowerCase();
-      if (group && block.splits?.length) statsByGroup[group] = block.splits;
+      const type = block.type?.displayName; // "season" | "seasonAdvanced" | "expectedStatistics"
+      if (!group || !type || !block.splits?.length) return;
+      (groups[group] ||= {})[type] = block.splits;
     });
 
-    const detail = { bio, statsByGroup };
+    const detail = { bio, groups };
     statsCache.set(key, detail);
     return detail;
   }
@@ -247,10 +278,53 @@
     return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${rows}</tbody></table></div>`;
   }
 
+  // Turn an unknown camelCase key into a readable label, e.g. "rbiWithRunners" -> "Rbi With Runners".
+  const humanize = (k) =>
+    k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()).trim();
+
+  const labelFor = (type, key) =>
+    (type === "expectedStatistics" && EXPECTED_LABELS[key]) || LABELS[key] || humanize(key);
+
+  // Build column keys from a stat object: drop empty/structural values, lead with preferred order.
+  function advColumns(stat, type) {
+    const skip = new Set(["__position"]);
+    const keys = Object.entries(stat)
+      .filter(([k, v]) => !skip.has(k) && v !== null && v !== undefined && v !== "" && typeof v !== "object")
+      .map(([k]) => k);
+    const lead = type === "expectedStatistics" ? EXPECTED_ORDER : [];
+    return keys.sort((a, b) => {
+      const ia = lead.indexOf(a), ib = lead.indexOf(b);
+      if (ia === -1 && ib === -1) return 0;
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    });
+  }
+
+  // Generic table for advanced / expected stat blocks (columns derived from the data).
+  function advTable(type, splits) {
+    const stat0 = splits[0]?.stat || {};
+    const cols = advColumns(stat0, type);
+    if (!cols.length) return "";
+    const showTeam = splits.length > 1;
+    const header = `<tr>${showTeam ? "<th>Split</th>" : ""}${cols
+      .map((k) => `<th>${esc(labelFor(type, k))}</th>`)
+      .join("")}</tr>`;
+    const rows = splits
+      .map((s) => {
+        const st = s.stat || {};
+        const teamCell = showTeam
+          ? `<td class="stat-key">${esc(s.team?.abbreviation || s.position?.abbreviation || "—")}</td>`
+          : "";
+        const cells = cols.map((k) => `<td>${esc(statValue(st, k))}</td>`).join("");
+        return `<tr>${teamCell}${cells}</tr>`;
+      })
+      .join("");
+    return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${rows}</tbody></table></div>`;
+  }
+
   function renderDetail(p, detail, season) {
-    const { bio, statsByGroup } = detail;
+    const { bio, groups } = detail;
     const groupsOrder = ["hitting", "pitching", "fielding"];
-    const present = groupsOrder.filter((g) => statsByGroup[g]?.length);
+    const present = groupsOrder.filter((g) => groups[g] && Object.keys(groups[g]).length);
 
     let sections = "";
     if (!present.length) {
@@ -258,10 +332,18 @@
     } else {
       sections = present
         .map((g) => {
-          const splits = statsByGroup[g];
+          const byType = groups[g];
+          const standard = byType.season ? statsTable(g, byType.season) : "";
+          const advanced = byType.seasonAdvanced
+            ? `<h4 class="stat-sub">Advanced</h4>${advTable("seasonAdvanced", byType.seasonAdvanced)}`
+            : "";
+          const expected = byType.expectedStatistics
+            ? `<h4 class="stat-sub">Expected Stats <span class="tag">Statcast</span></h4>` +
+              advTable("expectedStatistics", byType.expectedStatistics)
+            : "";
           return `<div class="stats-section">
             <h3>${GROUP_TITLES[g]}<span class="ctx">${season} season</span></h3>
-            ${statsTable(g, splits)}
+            ${standard}${advanced}${expected}
           </div>`;
         })
         .join("");
