@@ -254,9 +254,13 @@
       const detail = await getPlayerDetail(p.id, season);
       renderDetail(p, detail, season);
       setStatus(`Showing ${p.name} — ${season}.`);
-      // Optional Statcast percentile bars (only if a Savant proxy is configured).
+      // Optional Statcast extras (only if a Savant proxy is configured).
       const isPitcher = (detail.bio?.primaryPosition?.abbreviation || p.position) === "P";
-      addStatcastPercentiles(p, season, isPitcher);
+      if (window.SAVANT_PROXY) {
+        addStatcastPercentiles(p, season, isPitcher);
+        if (isPitcher) addPitchArsenal(p, season);
+        else addSprayChart(p, season);
+      }
     } catch (err) {
       setStatus(`Could not load stats for ${esc(p.name)}: ${esc(err.message)}`, true);
     }
@@ -582,8 +586,143 @@
     } catch { /* optional enrichment */ }
   }
 
-  // ===================== HOME (last game lineup) =====================
-  // Defensive position -> [left%, top%] on the field diagram (outfield at top).
+  // ---- Pitch arsenal (pitchers) ----
+  const ARSENAL_COLS = [
+    ["pitch_usage", "Usage%"], ["__velo", "Velo"], ["__spin", "Spin"],
+    ["whiff_percent", "Whiff%"], ["put_away", "PutAway%"],
+    ["ba", "BA"], ["slg", "SLG"], ["est_woba", "xwOBA"], ["hard_hit_percent", "HardHit%"],
+  ];
+  const arsenalCache = new Map(); // year -> {byPlayer, speed, spin}
+
+  async function getArsenal(year) {
+    if (!window.SAVANT_PROXY) return null;
+    if (arsenalCache.has(year)) return arsenalCache.get(year);
+    const base = String(window.SAVANT_PROXY).replace(/\/$/, "");
+    const csv = (u) => fetch(u).then((r) => (r.ok ? r.text() : "")).then(parseCSV).catch(() => []);
+    const [statsRows, speedRows, spinRows] = await Promise.all([
+      csv(`${base}/leaderboard/pitch-arsenal-stats?type=pitcher&year=${year}&min=1&csv=true`),
+      csv(`${base}/leaderboard/pitch-arsenals?year=${year}&min=1&type=avg_speed&csv=true`),
+      csv(`${base}/leaderboard/pitch-arsenals?year=${year}&min=1&type=avg_spin&csv=true`),
+    ]);
+    const byPlayer = new Map();
+    statsRows.forEach((r) => {
+      const id = String(r.player_id);
+      if (!byPlayer.has(id)) byPlayer.set(id, []);
+      byPlayer.get(id).push(r);
+    });
+    const index = (rows) => new Map(rows.map((r) => [String(r.player_id), r]));
+    const data = { byPlayer, speed: index(speedRows), spin: index(spinRows) };
+    arsenalCache.set(year, data);
+    return data;
+  }
+
+  function arsenalTable(rows, speedRow, spinRow) {
+    const sorted = [...rows].sort((a, b) => parseFloat(b.pitch_usage || 0) - parseFloat(a.pitch_usage || 0));
+    const cell = (r, key) => {
+      const pt = (r.pitch_type || "").toLowerCase();
+      if (key === "__velo") {
+        const v = speedRow?.[`${pt}_avg_speed`];
+        return v ? `${parseFloat(v).toFixed(1)}` : "—";
+      }
+      if (key === "__spin") {
+        const v = spinRow?.[`${pt}_avg_spin`];
+        return v ? `${Math.round(parseFloat(v))}` : "—";
+      }
+      const v = r[key];
+      return v == null || v === "" ? "—" : v;
+    };
+    const header = `<tr><th>Pitch</th>${ARSENAL_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr>`;
+    const body = sorted
+      .map((r) => `<tr>
+        <td class="stat-key">${esc(r.pitch_name || r.pitch_type || "—")}</td>
+        ${ARSENAL_COLS.map(([k]) => `<td>${esc(cell(r, k))}</td>`).join("")}
+      </tr>`)
+      .join("");
+    return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  async function addPitchArsenal(p, season) {
+    try {
+      const data = await getArsenal(season);
+      if (!data || selectedId !== p.id) return;
+      const rows = data.byPlayer.get(String(p.id));
+      if (!rows || !rows.length) return;
+      els.content.insertAdjacentHTML("beforeend", `
+        <div class="stats-section">
+          <h3>Pitch Arsenal <span class="tag">Savant</span><span class="ctx">${season}</span></h3>
+          ${arsenalTable(rows, data.speed.get(String(p.id)), data.spin.get(String(p.id)))}
+        </div>`);
+    } catch { /* optional */ }
+  }
+
+  // ---- Spray chart (hitters) ----
+  const sprayCache = new Map(); // `${id}:${year}` -> batted balls
+  const HIT_EVENTS = new Set(["single", "double", "triple", "home_run"]);
+
+  async function getSprayBalls(playerId, year) {
+    if (!window.SAVANT_PROXY) return null;
+    const key = `${playerId}:${year}`;
+    if (sprayCache.has(key)) return sprayCache.get(key);
+    const base = String(window.SAVANT_PROXY).replace(/\/$/, "");
+    const url = `${base}/statcast_search/csv?all=true&type=details&player_type=batter` +
+      `&batters_lookup%5B%5D=${playerId}&game_date_gt=${year}-01-01&game_date_lt=${year}-12-31`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`proxy ${res.status}`);
+    const balls = parseCSV(await res.text())
+      .filter((r) => r.hc_x && r.hc_y && r.events)
+      .map((r) => ({ x: parseFloat(r.hc_x), y: parseFloat(r.hc_y), events: r.events }))
+      .filter((b) => !Number.isNaN(b.x) && !Number.isNaN(b.y));
+    sprayCache.set(key, balls);
+    return balls;
+  }
+
+  function ballColor(ev) {
+    if (ev === "home_run") return "#ffc425";
+    if (HIT_EVENTS.has(ev)) return "#3ad05a";
+    return "#d7d2c7"; // outs / other
+  }
+
+  function sprayChart(balls) {
+    // Statcast hc coords: home plate ≈ (125.42, 198.27); y grows toward the plate.
+    const W = 320, H = 300, homeX = 160, homeY = 286, k = 1.18;
+    const dots = balls
+      .map((b) => {
+        const px = homeX + (b.x - 125.42) * k;
+        const py = homeY - (198.27 - b.y) * k;
+        if (px < 4 || px > W - 4 || py < 4 || py > H - 4) return "";
+        return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${ballColor(b.events)}" fill-opacity="0.9"/>`;
+      })
+      .join("");
+    const field = `
+      <rect x="0" y="0" width="${W}" height="${H}" fill="#3f8a3a"/>
+      <path d="M${homeX} ${homeY} L18 70 A 180 180 0 0 1 ${W - 18} 70 Z" fill="#4a9a44" stroke="#2b5e28" stroke-width="2"/>
+      <polygon points="${homeX},${homeY} ${homeX + 52},${homeY - 52} ${homeX},${homeY - 104} ${homeX - 52},${homeY - 52}" fill="#cda36b" stroke="#b8884e"/>
+      <line x1="${homeX}" y1="${homeY}" x2="18" y2="70" stroke="#fff" stroke-width="1.5" stroke-opacity="0.7"/>
+      <line x1="${homeX}" y1="${homeY}" x2="${W - 18}" y2="70" stroke="#fff" stroke-width="1.5" stroke-opacity="0.7"/>`;
+    return `<div class="spray-wrap">
+      <svg class="spray" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spray chart">${field}${dots}</svg>
+      <div class="spray-legend">
+        <span><i style="background:#ffc425"></i>HR</span>
+        <span><i style="background:#3ad05a"></i>Hit</span>
+        <span><i style="background:#d7d2c7"></i>Out</span>
+        <span>${balls.length} batted balls</span>
+      </div>
+    </div>`;
+  }
+
+  async function addSprayChart(p, season) {
+    try {
+      const balls = await getSprayBalls(p.id, season);
+      if (!balls || !balls.length || selectedId !== p.id) return;
+      els.content.insertAdjacentHTML("beforeend", `
+        <div class="stats-section">
+          <h3>Spray Chart <span class="tag">Statcast</span><span class="ctx">${season}</span></h3>
+          ${sprayChart(balls)}
+        </div>`);
+    } catch { /* optional */ }
+  }
+
+  // ===================== HOME (last game lineup) =====================  // Defensive position -> [left%, top%] on the field diagram (outfield at top).
   const POS_COORDS = {
     P: [50, 60], C: [50, 89],
     "1B": [72, 62], "2B": [61, 49], "3B": [28, 62], SS: [39, 49],
