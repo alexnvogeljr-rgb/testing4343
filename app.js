@@ -113,8 +113,9 @@
     homeSub: document.getElementById("homeGameSub"),
   };
 
-  let currentRoster = [];   // [{id, name, number, position, posType}]
+  let currentRoster = [];   // [{id, name, number, position, posType, ops, era}]
   let selectedId = null;
+  let rosterTab = "hitters"; // "hitters" | "pitchers"
   const statsCache = new Map(); // key `${id}:${season}` -> {bio, groups}
 
   // --- Helpers ---
@@ -158,17 +159,17 @@
     try {
       const data = await fetchJSON(
         `${API}/teams/${TEAM_ID}/roster?rosterType=${encodeURIComponent(type)}&season=${season}` +
-        `&hydrate=person(stats(group=[hitting],type=[season],season=${season}))`
+        `&hydrate=person(stats(group=[hitting,pitching],type=[season],season=${season}))`
       );
       currentRoster = (data.roster || []).map((r) => {
-        // Pull season OPS from the hydrated hitting stats, if any.
-        const hit = (r.person?.stats || []).find(
-          (b) => b.group?.displayName?.toLowerCase() === "hitting"
-        );
-        const opsRaw = hit?.splits?.[0]?.stat?.ops;
+        const blocks = r.person?.stats || [];
+        const grp = (name) => blocks.find((b) => b.group?.displayName?.toLowerCase() === name);
+        const opsRaw = grp("hitting")?.splits?.[0]?.stat?.ops;
+        const eraRaw = grp("pitching")?.splits?.[0]?.stat?.era;
         const ops = opsRaw != null && opsRaw !== "" && !Number.isNaN(parseFloat(opsRaw))
-          ? parseFloat(opsRaw)
-          : null;
+          ? parseFloat(opsRaw) : null;
+        const era = eraRaw != null && eraRaw !== "" && !Number.isNaN(parseFloat(eraRaw))
+          ? parseFloat(eraRaw) : null;
         return {
           id: r.person.id,
           name: r.person.fullName,
@@ -177,6 +178,8 @@
           posType: r.position?.type || "",
           ops,
           opsStr: ops != null ? formatOps(opsRaw) : null,
+          era,
+          eraStr: era != null ? era.toFixed(2) : null,
         };
       });
       if (!currentRoster.length) {
@@ -191,39 +194,36 @@
     }
   }
 
+  const isPitcherPlayer = (p) => p.posType === "Pitcher" || p.position === "P";
+
   function renderRoster() {
     const q = els.search.value.trim().toLowerCase();
     const filtered = currentRoster.filter(
       (p) => !q || p.name.toLowerCase().includes(q) || p.position.toLowerCase().includes(q)
     );
-    els.count.textContent = String(filtered.length);
 
-    // Eligible = has a season OPS; rank those high → low. The rest follow,
-    // ordered by jersey number then name.
-    const byNumThenName = (a, b) =>
-      (parseInt(a.number, 10) || 999) - (parseInt(b.number, 10) || 999) ||
-      a.name.localeCompare(b.name);
-    const eligible = filtered.filter((p) => p.ops != null).sort((a, b) => b.ops - a.ops);
-    const ineligible = filtered.filter((p) => p.ops == null).sort(byNumThenName);
+    // One tab at a time: Hitters ranked by OPS, Pitchers ranked by ERA.
+    const showingPitchers = rosterTab === "pitchers";
+    const group = filtered.filter((p) => (showingPitchers ? isPitcherPlayer(p) : !isPitcherPlayer(p)));
+    if (showingPitchers) {
+      group.sort((a, b) => (a.era ?? Infinity) - (b.era ?? Infinity) || a.name.localeCompare(b.name));
+    } else {
+      group.sort((a, b) => (b.ops ?? -1) - (a.ops ?? -1) || a.name.localeCompare(b.name));
+    }
+    els.count.textContent = String(group.length);
 
     els.list.innerHTML = "";
-    const addGroup = (label, players) => {
-      if (!players.length) return;
-      const head = document.createElement("div");
-      head.className = "roster-group-label";
-      head.textContent = `${label} (${players.length})`;
-      els.list.appendChild(head);
-      players.forEach((p) => els.list.appendChild(playerRow(p)));
-    };
-    addGroup("Ranked by OPS", eligible);
-    addGroup("Pitchers / No OPS", ineligible);
-
-    if (!filtered.length) {
-      els.list.innerHTML = `<div class="empty-note" style="padding:16px">No players match your filter.</div>`;
+    if (!group.length) {
+      els.list.innerHTML = `<div class="empty-note" style="padding:16px">No ${showingPitchers ? "pitchers" : "hitters"} match your filter.</div>`;
+      return;
     }
+    group.forEach((p) => els.list.appendChild(playerRow(p, showingPitchers)));
   }
 
-  function playerRow(p) {
+  function playerRow(p, showingPitchers) {
+    const metric = showingPitchers
+      ? (p.eraStr ? ` &middot; <span class="meta-ops">ERA ${esc(p.eraStr)}</span>` : "")
+      : (p.opsStr ? ` &middot; <span class="meta-ops">OPS ${esc(p.opsStr)}</span>` : "");
     const btn = document.createElement("button");
     btn.className = "player-row" + (p.id === selectedId ? " active" : "");
     btn.setAttribute("role", "listitem");
@@ -231,9 +231,7 @@
       <img class="player-avatar" src="${headshot(p.id, 80)}" alt="" loading="lazy" />
       <span>
         <span class="name">${esc(p.name)}</span><br/>
-        <span class="player-meta">${esc(p.position || "—")}${
-          p.opsStr ? ` &middot; <span class="meta-ops">OPS ${esc(p.opsStr)}</span>` : ""
-        }</span>
+        <span class="player-meta">${esc(p.position || "—")}${metric}</span>
       </span>
       <span class="player-num">${p.number ? "#" + esc(p.number) : ""}</span>`;
     btn.addEventListener("click", () => selectPlayer(p));
@@ -1206,6 +1204,13 @@
   });
   els.roster.addEventListener("change", loadRoster);
   els.search.addEventListener("input", renderRoster);
+  document.querySelectorAll(".rt-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      rosterTab = b.dataset.tab;
+      document.querySelectorAll(".rt-btn").forEach((x) => x.classList.toggle("active", x === b));
+      renderRoster();
+    })
+  );
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => showView(t.dataset.view))
   );

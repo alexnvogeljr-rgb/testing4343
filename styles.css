@@ -110,7 +110,34 @@ html, body {
   padding: 2px 9px;
   border-radius: 999px;
 }
-.roster-list { max-height: 70vh; overflow-y: auto; }
+.roster-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: #fbf8f3;
+  border-bottom: 1px solid var(--line);
+}
+.rt-btn {
+  flex: 1 1 0;
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.rt-btn:hover { color: var(--brown); }
+.rt-btn.active {
+  background: var(--brown);
+  color: var(--gold);
+  border-color: var(--brown);
+}
+.roster-list { max-height: 64vh; overflow-y: auto; }
 
 .roster-group-label {
   padding: 8px 16px;
