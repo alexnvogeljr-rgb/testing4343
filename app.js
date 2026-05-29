@@ -190,7 +190,9 @@
     const bio = bioData.people?.[0] || {};
     const statsByGroup = {};
     (statsData.stats || []).forEach((block) => {
-      const group = block.group?.displayName;
+      // The API reports the group name in lowercase ("hitting"); normalize so
+      // lookups are case-insensitive regardless of how the API formats it.
+      const group = block.group?.displayName?.toLowerCase();
       if (group && block.splits?.length) statsByGroup[group] = block.splits;
     });
 
@@ -248,7 +250,7 @@
   function renderDetail(p, detail, season) {
     const { bio, statsByGroup } = detail;
     const groupsOrder = ["hitting", "pitching", "fielding"];
-    const present = groupsOrder.filter((g) => statsByGroup[GROUP_TITLES[g]]);
+    const present = groupsOrder.filter((g) => statsByGroup[g]?.length);
 
     let sections = "";
     if (!present.length) {
@@ -256,7 +258,7 @@
     } else {
       sections = present
         .map((g) => {
-          const splits = statsByGroup[GROUP_TITLES[g]];
+          const splits = statsByGroup[g];
           return `<div class="stats-section">
             <h3>${GROUP_TITLES[g]}<span class="ctx">${season} season</span></h3>
             ${statsTable(g, splits)}
