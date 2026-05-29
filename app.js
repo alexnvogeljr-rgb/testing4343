@@ -832,6 +832,17 @@
     }
   }
 
+  // Optional aerial/overhead image behind the lineup (configured in config.js).
+  function fieldImageLayer() {
+    const src = typeof window.FIELD_IMAGE === "string" ? window.FIELD_IMAGE : "";
+    if (!src) return "";
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    const transform = `translate(${num(window.FIELD_IMAGE_OFFSET_X, 0)}%, ${num(window.FIELD_IMAGE_OFFSET_Y, 0)}%)` +
+      ` rotate(${num(window.FIELD_IMAGE_ROTATE, 0)}deg) scale(${num(window.FIELD_IMAGE_SCALE, 1)})`;
+    // On error, the image hides itself and the drawn diamond shows through.
+    return `<img class="field-img" src="${esc(src)}" alt="Aerial of Petco Park" style="transform:${transform}" onerror="this.style.display='none'"/>`;
+  }
+
   function renderHome(game, box, wp, pbp) {
     const padKey = game.teams?.home?.team?.id === TEAM_ID ? "home" : "away";
     const oppKey = padKey === "home" ? "away" : "home";
@@ -900,8 +911,9 @@
     const winProb = winProbSection(wp, pbp, padKey === "home");
 
     els.homeSub.textContent = `Padres ${padScore}–${oppScore} ${win ? "W" : "L"} vs ${opp.team?.name || ""}`;
+    const imgLayer = fieldImageLayer();
     els.home.innerHTML = `${banner}
-      <div class="field"><div class="infield"></div><div class="mound"></div>${chips}</div>
+      <div class="field${imgLayer ? " has-aerial" : ""}">${imgLayer}<div class="infield"></div><div class="mound"></div>${chips}</div>
       ${benchHtml}
       ${winProb}`;
 
