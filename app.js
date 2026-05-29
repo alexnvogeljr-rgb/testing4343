@@ -254,6 +254,9 @@
       const detail = await getPlayerDetail(p.id, season);
       renderDetail(p, detail, season);
       setStatus(`Showing ${p.name} — ${season}.`);
+      // Optional Statcast percentile bars (only if a Savant proxy is configured).
+      const isPitcher = (detail.bio?.primaryPosition?.abbreviation || p.position) === "P";
+      addStatcastPercentiles(p, season, isPitcher);
     } catch (err) {
       setStatus(`Could not load stats for ${esc(p.name)}: ${esc(err.message)}`, true);
     }
@@ -478,6 +481,105 @@
       ${sections}`;
     els.placeholder.classList.add("hidden");
     els.content.classList.remove("hidden");
+  }
+
+  // ===================== STATCAST PERCENTILES (via Savant proxy) =====================
+  const SAVANT_LABELS = {
+    xwoba: "xwOBA", xba: "xBA", xslg: "xSLG", xobp: "xOBP", xwobacon: "xwOBAcon", xera: "xERA",
+    brl: "Barrels", brl_percent: "Barrel %", exit_velocity_avg: "Avg Exit Velo",
+    max_exit_velocity: "Max Exit Velo", hard_hit_percent: "Hard-Hit %",
+    k_percent: "K %", bb_percent: "BB %", whiff_percent: "Whiff %", chase_percent: "Chase %",
+    sprint_speed: "Sprint Speed", oaa: "Outs Above Avg", arm_strength: "Arm Strength",
+    fb_velocity: "Fastball Velo", fastball_velocity: "Fastball Velo", fb_spin: "Fastball Spin",
+    curve_spin: "Curveball Spin", extension: "Extension", pop_2b_sba: "Pop Time",
+  };
+  const BATTER_PCT_ORDER = [
+    "xwoba", "xba", "xslg", "xobp", "brl_percent", "exit_velocity_avg", "max_exit_velocity",
+    "hard_hit_percent", "k_percent", "bb_percent", "whiff_percent", "chase_percent",
+    "sprint_speed", "oaa", "arm_strength",
+  ];
+  const PITCHER_PCT_ORDER = [
+    "xwoba", "xera", "xba", "xslg", "brl_percent", "exit_velocity_avg", "hard_hit_percent",
+    "k_percent", "bb_percent", "whiff_percent", "chase_percent", "fb_velocity", "fastball_velocity",
+    "fb_spin", "curve_spin", "extension",
+  ];
+
+  // Minimal CSV parser that respects quoted fields.
+  function splitCSVLine(line) {
+    const out = []; let cur = "", q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) {
+        if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+        else cur += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCSV(text) {
+    const lines = text.replace(/^﻿/, "").replace(/\r/g, "").split("\n").filter((l) => l.length);
+    if (!lines.length) return [];
+    const header = splitCSVLine(lines[0]).map((h) => h.trim());
+    return lines.slice(1).map((line) => {
+      const cells = splitCSVLine(line);
+      const obj = {};
+      header.forEach((h, i) => (obj[h] = cells[i]));
+      return obj;
+    });
+  }
+
+  const savantCache = new Map(); // `${type}:${year}` -> Map(player_id -> row)
+  async function getSavantPercentiles(isPitcher, year) {
+    if (!window.SAVANT_PROXY) return null;
+    const type = isPitcher ? "pitcher" : "batter";
+    const cacheKey = `${type}:${year}`;
+    if (savantCache.has(cacheKey)) return savantCache.get(cacheKey);
+    const base = String(window.SAVANT_PROXY).replace(/\/$/, "");
+    const res = await fetch(`${base}/leaderboard/percentile-rankings?type=${type}&year=${year}&csv=true`);
+    if (!res.ok) throw new Error(`proxy ${res.status}`);
+    const rows = parseCSV(await res.text());
+    const map = new Map(rows.map((r) => [String(r.player_id), r]));
+    savantCache.set(cacheKey, map);
+    return map;
+  }
+
+  // red (low) -> blue (high), Savant-style.
+  const pctColor = (v) => `rgb(${Math.round(210 - v * 1.5)},80,${Math.round(60 + v * 1.5)})`;
+
+  function percentileBars(row, isPitcher) {
+    const order = isPitcher ? PITCHER_PCT_ORDER : BATTER_PCT_ORDER;
+    const seen = new Set();
+    const bars = order
+      .filter((k) => k in row && !seen.has(SAVANT_LABELS[k]) && seen.add(SAVANT_LABELS[k]))
+      .map((k) => ({ k, v: parseFloat(row[k]) }))
+      .filter((x) => !Number.isNaN(x.v) && x.v >= 0 && x.v <= 100)
+      .map(({ k, v }) => `
+        <div class="pct-row">
+          <span class="pct-label">${esc(SAVANT_LABELS[k] || k)}</span>
+          <div class="pct-track"><span class="pct-dot" style="left:${v}%;background:${pctColor(v)}">${Math.round(v)}</span></div>
+        </div>`)
+      .join("");
+    return bars;
+  }
+
+  async function addStatcastPercentiles(p, season, isPitcher) {
+    if (!window.SAVANT_PROXY) return;
+    try {
+      const map = await getSavantPercentiles(isPitcher, season);
+      if (!map || selectedId !== p.id) return; // selection changed while loading
+      const row = map.get(String(p.id));
+      if (!row) return;
+      const bars = percentileBars(row, isPitcher);
+      if (!bars) return;
+      els.content.insertAdjacentHTML("beforeend", `
+        <div class="stats-section">
+          <h3>Statcast Percentiles <span class="tag">Savant</span><span class="ctx">${season} &middot; rank vs MLB</span></h3>
+          <div class="pct-wrap">${bars}</div>
+        </div>`);
+    } catch { /* optional enrichment */ }
   }
 
   // ===================== HOME (last game lineup) =====================

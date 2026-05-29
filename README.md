@@ -27,6 +27,8 @@ Four pages, switchable from the top nav:
   (xBA, xSLG, xwOBA), **last 3 seasons**, and **splits** (vs LHP/RHP,
   home/away, RISP) plus **by-month** lines for hitting and pitching.
 - **Roster ranked by OPS** (value shown), pitchers/no-OPS players after.
+- **Statcast percentile bars** (Savant-style, vs MLB) — optional; requires the
+  Cloudflare Worker proxy in [`worker/`](./worker/README.md) and a URL in `config.js`.
 - **Live search/filter** by name or position.
 
 **Schedule**

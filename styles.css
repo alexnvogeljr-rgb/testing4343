@@ -468,6 +468,24 @@ tr.is-padres .team-cell { color: var(--brown); font-weight: 800; }
 .wpa-val.pos { color: var(--good); }
 .wpa-val.neg { color: var(--bad); }
 
+/* ---------- Statcast percentile bars ---------- */
+.pct-wrap { max-width: 560px; }
+.pct-row { display: flex; align-items: center; gap: 12px; margin: 9px 0; }
+.pct-label { width: 120px; flex-shrink: 0; font-size: 12.5px; font-weight: 600; text-align: right; color: var(--brown-light); }
+.pct-track {
+  position: relative; flex: 1 1 auto; height: 6px;
+  background: linear-gradient(90deg, #e3a9a9, #e7e2d6 50%, #a9bce8);
+  border-radius: 999px;
+}
+.pct-dot {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  min-width: 24px; height: 24px; padding: 0 4px;
+  display: grid; place-items: center;
+  border-radius: 999px; color: #fff;
+  font-size: 11px; font-weight: 800;
+  border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
 /* ---------- Home: last-game lineup on the field ---------- */
 .home-content { max-width: 1100px; margin: 0 auto; padding: 12px 20px 24px; }
 
