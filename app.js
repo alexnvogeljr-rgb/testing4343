@@ -489,21 +489,24 @@
 
   // ===================== STATCAST PERCENTILES (via Savant proxy) =====================
   const SAVANT_LABELS = {
-    xwoba: "xwOBA", xba: "xBA", xslg: "xSLG", xobp: "xOBP", xwobacon: "xwOBAcon", xera: "xERA",
-    brl: "Barrels", brl_percent: "Barrel %", exit_velocity_avg: "Avg Exit Velo",
-    max_exit_velocity: "Max Exit Velo", hard_hit_percent: "Hard-Hit %",
+    xwoba: "xwOBA", xba: "xBA", xslg: "xSLG", xobp: "xOBP", xiso: "xISO",
+    xwobacon: "xwOBAcon", xera: "xERA",
+    brl: "Barrels", brl_percent: "Barrel %",
+    exit_velocity: "Avg Exit Velo", exit_velocity_avg: "Avg Exit Velo",
+    max_ev: "Max Exit Velo", max_exit_velocity: "Max Exit Velo", hard_hit_percent: "Hard-Hit %",
     k_percent: "K %", bb_percent: "BB %", whiff_percent: "Whiff %", chase_percent: "Chase %",
+    bat_speed: "Bat Speed", squared_up_rate: "Squared-Up %", swing_length: "Swing Length",
     sprint_speed: "Sprint Speed", oaa: "Outs Above Avg", arm_strength: "Arm Strength",
     fb_velocity: "Fastball Velo", fastball_velocity: "Fastball Velo", fb_spin: "Fastball Spin",
     curve_spin: "Curveball Spin", extension: "Extension", pop_2b_sba: "Pop Time",
   };
   const BATTER_PCT_ORDER = [
-    "xwoba", "xba", "xslg", "xobp", "brl_percent", "exit_velocity_avg", "max_exit_velocity",
-    "hard_hit_percent", "k_percent", "bb_percent", "whiff_percent", "chase_percent",
-    "sprint_speed", "oaa", "arm_strength",
+    "xwoba", "xba", "xslg", "xobp", "xiso", "brl_percent", "exit_velocity", "max_ev",
+    "hard_hit_percent", "bat_speed", "squared_up_rate", "swing_length",
+    "k_percent", "bb_percent", "whiff_percent", "chase_percent", "sprint_speed", "oaa", "arm_strength",
   ];
   const PITCHER_PCT_ORDER = [
-    "xwoba", "xera", "xba", "xslg", "brl_percent", "exit_velocity_avg", "hard_hit_percent",
+    "xwoba", "xera", "xba", "xslg", "brl_percent", "exit_velocity", "hard_hit_percent",
     "k_percent", "bb_percent", "whiff_percent", "chase_percent", "fb_velocity", "fastball_velocity",
     "fb_spin", "curve_spin", "extension",
   ];
@@ -604,13 +607,15 @@
       csv(`${base}/leaderboard/pitch-arsenals?year=${year}&min=1&type=avg_speed&csv=true`),
       csv(`${base}/leaderboard/pitch-arsenals?year=${year}&min=1&type=avg_spin&csv=true`),
     ]);
+    // Savant uses "pitcher" as the id column in some files, "player_id" in others.
+    const pid = (r) => String(r.player_id ?? r.pitcher ?? "");
     const byPlayer = new Map();
     statsRows.forEach((r) => {
-      const id = String(r.player_id);
+      const id = pid(r);
       if (!byPlayer.has(id)) byPlayer.set(id, []);
       byPlayer.get(id).push(r);
     });
-    const index = (rows) => new Map(rows.map((r) => [String(r.player_id), r]));
+    const index = (rows) => new Map(rows.map((r) => [pid(r), r]));
     const data = { byPlayer, speed: index(speedRows), spin: index(spinRows) };
     arsenalCache.set(year, data);
     return data;
