@@ -16,14 +16,18 @@ Four pages, switchable from the top nav:
   each starter's headshot is placed at the position they played, with their
   game line (e.g. `2-4, HR` for hitters; `6.0 IP, 7 K, 1 ER` for the starter).
 - A score banner (result, opponent, date, venue) and a DH chip below the field.
+- A **win-probability chart** for the game plus a **WPA leaderboard**
+  ("who won the game") attributing win-probability swings to each player.
 - Click any player to jump to their full stats on the Players page.
 
 **Players**
 - **Full roster** for any season (Active, 40-Man, or Full Season).
 - **Player-by-player detail**: bio plus **standard**, **advanced**
-  (ISO, BABIP, BB%, K%, K/9, BB/9…), and **expected Statcast** stats
-  (xBA, xSLG, xwOBA) for hitting, pitching, and fielding.
-- **Live search/filter** by name or position; grouped Position Players / Pitchers.
+  (ISO, BABIP, BB%, K%, K/9, BB/9…), **expected Statcast** stats
+  (xBA, xSLG, xwOBA), **last 3 seasons**, and **splits** (vs LHP/RHP,
+  home/away, RISP) plus **by-month** lines for hitting and pitching.
+- **Roster ranked by OPS** (value shown), pitchers/no-OPS players after.
+- **Live search/filter** by name or position.
 
 **Schedule**
 - Padres' **upcoming games** for the next 60 days, grouped by day, with
@@ -32,6 +36,8 @@ Four pages, switchable from the top nav:
 **Standings**
 - **All six MLB divisions** (AL & NL) for the selected season: W, L, PCT, GB,
   WCGB, L10, streak, runs scored/allowed, run differential — Padres row highlighted.
+- **Pythagorean expected W-L** (exp 1.83) and a **Luck** delta (actual − expected),
+  plus **wild-card seeds**, **magic numbers**, and **clinch** badges.
 
 Plus a **season selector** (2015 → current year) and a Padres-themed, responsive UI.
 

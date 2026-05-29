@@ -56,6 +56,21 @@
   };
   const GROUP_TITLES = { hitting: "Hitting", pitching: "Pitching", fielding: "Fielding" };
 
+  // Compact column sets used for split / monthly tables.
+  const SPLIT_COLUMNS = {
+    hitting: [
+      ["atBats", "AB"], ["hits", "H"], ["homeRuns", "HR"], ["rbi", "RBI"],
+      ["baseOnBalls", "BB"], ["strikeOuts", "SO"], ["avg", "AVG"],
+      ["obp", "OBP"], ["slg", "SLG"], ["ops", "OPS"],
+    ],
+    pitching: [
+      ["gamesPlayed", "G"], ["inningsPitched", "IP"], ["hits", "H"], ["earnedRuns", "ER"],
+      ["baseOnBalls", "BB"], ["strikeOuts", "SO"], ["avg", "AVG"], ["era", "ERA"], ["whip", "WHIP"],
+    ],
+  };
+  const MONTHS = { 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov" };
+  const monthName = (m) => MONTHS[Number(m)] || (m != null ? String(m) : "—");
+
   // Friendly labels for advanced (seasonAdvanced) stat fields.
   const LABELS = {
     // hitting (advanced)
@@ -251,8 +266,8 @@
     const [bioData, statsData] = await Promise.all([
       fetchJSON(`${API}/people/${id}`),
       fetchJSON(
-        `${API}/people/${id}/stats?stats=season,seasonAdvanced,expectedStatistics,yearByYear` +
-        `&season=${season}&group=hitting,pitching,fielding`
+        `${API}/people/${id}/stats?stats=season,seasonAdvanced,expectedStatistics,yearByYear,statSplits,byMonth` +
+        `&season=${season}&group=hitting,pitching,fielding&sitCodes=vl,vr,h,a,risp`
       ),
     ]);
 
@@ -388,6 +403,23 @@
     return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${rows}</tbody></table></div>`;
   }
 
+  // Table for split rows (vs L/R, home/away, RISP) or monthly rows.
+  function splitsTable(group, splits, getLabel) {
+    const cols = SPLIT_COLUMNS[group];
+    if (!cols || !splits?.length) return "";
+    const rows = splits
+      .map((s) => {
+        const label = getLabel(s);
+        if (!label) return "";
+        const cells = cols.map(([key]) => `<td>${esc(statValue(s.stat || {}, key))}</td>`).join("");
+        return `<tr><td class="stat-key">${esc(label)}</td>${cells}</tr>`;
+      })
+      .join("");
+    if (!rows) return "";
+    const header = `<tr><th>Split</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr>`;
+    return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${rows}</tbody></table></div>`;
+  }
+
   function renderDetail(p, detail, season) {
     const { bio, groups } = detail;
     const groupsOrder = ["hitting", "pitching", "fielding"];
@@ -413,9 +445,19 @@
             const t = recentTable(g, byType.yearByYear, Number(season));
             if (t) recent = `<h4 class="stat-sub">Last 3 Seasons</h4>${t}`;
           }
+          let splits = "";
+          if (byType.statSplits) {
+            const t = splitsTable(g, byType.statSplits, (s) => s.split?.description || "");
+            if (t) splits = `<h4 class="stat-sub">Splits</h4>${t}`;
+          }
+          let months = "";
+          if (byType.byMonth) {
+            const t = splitsTable(g, byType.byMonth, (s) => s.split?.description || monthName(s.month));
+            if (t) months = `<h4 class="stat-sub">By Month</h4>${t}`;
+          }
           return `<div class="stats-section">
             <h3>${GROUP_TITLES[g]}<span class="ctx">${season} season</span></h3>
-            ${standard}${advanced}${expected}${recent}
+            ${standard}${advanced}${expected}${recent}${splits}${months}
           </div>`;
         })
         .join("");
@@ -497,7 +539,15 @@
         return;
       }
       const box = await fetchJSON(`${API}/game/${game.gamePk}/boxscore`);
-      renderHome(game, box);
+      // Win probability + play-by-play power the WPA leaderboard and chart (best-effort).
+      let wp = null, pbp = null;
+      try {
+        [wp, pbp] = await Promise.all([
+          fetchJSON(`${API}/game/${game.gamePk}/winProbability`),
+          fetchJSON(`${API}/game/${game.gamePk}/playByPlay`),
+        ]);
+      } catch { /* chart/WPA are optional */ }
+      renderHome(game, box, wp, pbp);
       homeLoaded = true;
       setStatus("Last game lineup loaded.");
     } catch (err) {
@@ -505,7 +555,7 @@
     }
   }
 
-  function renderHome(game, box) {
+  function renderHome(game, box, wp, pbp) {
     const padKey = game.teams?.home?.team?.id === TEAM_ID ? "home" : "away";
     const oppKey = padKey === "home" ? "away" : "home";
     const pad = game.teams[padKey] || {};
@@ -570,13 +620,16 @@
           .join("")}</div>`
       : "";
 
+    const winProb = winProbSection(wp, pbp, padKey === "home");
+
     els.homeSub.textContent = `Padres ${padScore}–${oppScore} ${win ? "W" : "L"} vs ${opp.team?.name || ""}`;
     els.home.innerHTML = `${banner}
       <div class="field"><div class="infield"></div><div class="mound"></div>${chips}</div>
-      ${benchHtml}`;
+      ${benchHtml}
+      ${winProb}`;
 
     // Clicking a player jumps to the Players page with their detail open.
-    els.home.querySelectorAll(".fld-chip, .bench-chip").forEach((el) => {
+    els.home.querySelectorAll(".fld-chip, .bench-chip, .wpa-row").forEach((el) => {
       el.addEventListener("click", () => {
         const d = el.dataset;
         if (!d.id) return;
@@ -584,6 +637,77 @@
         selectPlayer({ id: Number(d.id), name: d.name, number: d.num, position: d.pos, posType: "" });
       });
     });
+  }
+
+  // Win-probability chart (SVG) + per-player WPA leaderboard for the last game.
+  function winProbSection(wp, pbp, padresHome) {
+    const wpArr = Array.isArray(wp) ? wp : [];
+    if (!wpArr.length) return "";
+
+    // From the Padres' perspective: their win prob over the course of the game.
+    const series = wpArr
+      .map((e) => (padresHome ? e.homeTeamWinProbability : e.awayTeamWinProbability))
+      .filter((v) => typeof v === "number");
+    let chart = "";
+    if (series.length > 1) {
+      const W = 600, H = 150;
+      const pts = series
+        .map((v, i) => `${(i / (series.length - 1) * W).toFixed(1)},${((100 - v) / 100 * H).toFixed(1)}`)
+        .join(" ");
+      const last = series[series.length - 1];
+      chart = `
+        <svg class="wp-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Padres win probability">
+          <rect x="0" y="0" width="${W}" height="${H}" fill="#fbf8f3"/>
+          <line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" stroke="#d8cdbb" stroke-dasharray="4 4"/>
+          <polyline points="${pts}" fill="none" stroke="#2f241d" stroke-width="2.5"/>
+        </svg>
+        <div class="wp-caption">Padres win probability &middot; ended at <b>${last.toFixed(0)}%</b></div>`;
+    }
+
+    // WPA per Padres player: join win-prob deltas to the play's batter/pitcher.
+    let board = "";
+    const plays = pbp?.allPlays || [];
+    if (plays.length) {
+      const byIdx = new Map(plays.map((p) => [p.about?.atBatIndex, p]));
+      const padresAway = !padresHome;
+      const wpa = new Map();
+      wpArr.forEach((e) => {
+        const add = Number(e.homeTeamWinProbabilityAdded);
+        if (Number.isNaN(add)) return;
+        const play = byIdx.get(e.atBatIndex);
+        if (!play) return;
+        const padBatting = play.about?.isTopInning === padresAway;
+        const person = padBatting ? play.matchup?.batter : play.matchup?.pitcher;
+        if (!person?.id) return;
+        const padWPA = padresHome ? add : -add; // change in Padres win prob
+        const cur = wpa.get(person.id) || { name: person.fullName, role: padBatting ? "bat" : "pit", total: 0 };
+        cur.total += padWPA;
+        wpa.set(person.id, cur);
+      });
+      const ranked = [...wpa.entries()].sort((a, b) => b[1].total - a[1].total);
+      if (ranked.length) {
+        const row = ([id, c]) => {
+          const v = c.total / 100; // to win units
+          const sign = v >= 0 ? "+" : "";
+          return `<button class="wpa-row" data-id="${id}" data-name="${esc(c.name)}" data-pos="${c.role === "pit" ? "P" : ""}">
+            <img src="${headshot(id, 80)}" alt=""/>
+            <span class="wpa-name">${esc(c.name)}</span>
+            <span class="wpa-val ${v >= 0 ? "pos" : "neg"}">${sign}${v.toFixed(3)}</span>
+          </button>`;
+        };
+        const top = ranked.slice(0, 5).map(row).join("");
+        const worst = ranked.length > 5 ? `<div class="wpa-sub">Lowest</div>${row(ranked[ranked.length - 1])}` : "";
+        board = `<div class="wpa-board">
+          <div class="wpa-sub">Top WPA — who won the game</div>${top}${worst}
+        </div>`;
+      }
+    }
+
+    if (!chart && !board) return "";
+    return `<div class="wp-section">
+      <h3 class="wp-title">Win Probability</h3>
+      ${chart}${board}
+    </div>`;
   }
 
   // ===================== SCHEDULE =====================
@@ -680,10 +804,30 @@
     ["wins", "W"], ["losses", "L"], ["winningPercentage", "PCT"], ["gamesBack", "GB"],
     ["wildCardGamesBack", "WCGB"], ["__l10", "L10"], ["__streak", "STRK"],
     ["runsScored", "RS"], ["runsAllowed", "RA"], ["__diff", "DIFF"],
+    ["__xwl", "xW-L"], ["__luck", "LUCK"],
   ];
+
+  // Pythagorean expected wins (exponent 1.83). Returns null if not computable.
+  function pythagW(tr) {
+    const rs = Number(tr.runsScored), ra = Number(tr.runsAllowed);
+    const g = Number(tr.wins) + Number(tr.losses);
+    if (!rs || !ra || !g) return null;
+    const exp = Math.pow(rs, 1.83) / (Math.pow(rs, 1.83) + Math.pow(ra, 1.83));
+    return Math.round(exp * g);
+  }
 
   function srVal(tr, key) {
     switch (key) {
+      case "__xwl": {
+        const xw = pythagW(tr);
+        return xw == null ? "—" : `${xw}-${Number(tr.wins) + Number(tr.losses) - xw}`;
+      }
+      case "__luck": {
+        const xw = pythagW(tr);
+        if (xw == null) return "—";
+        const d = Number(tr.wins) - xw;
+        return d > 0 ? `+${d}` : String(d);
+      }
       case "__l10": {
         const s = (tr.records?.splitRecords || []).find((r) => r.type === "lastTen");
         return s ? `${s.wins}-${s.losses}` : "—";
@@ -734,19 +878,43 @@
       (leagues[meta.league] || (leagues[meta.league] = [])).push({ name, order: meta.order, rec });
     });
 
+    // Derive wild-card positions per league: non-division-leaders ranked by win%.
+    const wcMarks = new Map();
+    Object.values(leagues).forEach((divs) => {
+      const contenders = [];
+      divs.forEach((d) => (d.rec.teamRecords || []).forEach((tr) => {
+        if (String(tr.divisionRank) !== "1") contenders.push(tr);
+      }));
+      contenders
+        .sort((a, b) => parseFloat(b.winningPercentage || 0) - parseFloat(a.winningPercentage || 0))
+        .slice(0, 3)
+        .forEach((tr, i) => wcMarks.set(tr.team?.id, `WC${i + 1}`));
+    });
+
     const leagueBlock = (label, divs) => {
       if (!divs.length) return "";
       divs.sort((a, b) => a.order - b.order);
-      return `<div class="league-block"><h3>${label}</h3>${divs.map(divisionTable).join("")}</div>`;
+      return `<div class="league-block"><h3>${label}</h3>${divs.map((d) => divisionTable(d, wcMarks)).join("")}</div>`;
     };
 
     els.standings.innerHTML = `<div class="standings-leagues">
       ${leagueBlock("American League", leagues.AL)}
       ${leagueBlock("National League", leagues.NL)}
-    </div>`;
+    </div>
+    <p class="standings-legend">Bold tags: ✓ = clinched · <b>M#</b> = magic number · <b>WC#</b> = wild-card seed.
+    xW-L = Pythagorean expected record (exp 1.83); LUCK = actual wins − expected wins.</p>`;
   }
 
-  function divisionTable({ name, rec }) {
+  // Small clinch / magic-number / wild-card badge for a team.
+  function teamBadge(tr, wcMarks) {
+    if (tr.clinchIndicator) return `<span class="tm-badge clinch">✓${esc(tr.clinchIndicator)}</span>`;
+    if (tr.magicNumber != null && tr.magicNumber !== "" && tr.magicNumber !== "-")
+      return `<span class="tm-badge">M${esc(tr.magicNumber)}</span>`;
+    const wc = wcMarks.get(tr.team?.id);
+    return wc ? `<span class="tm-badge wc">${esc(wc)}</span>` : "";
+  }
+
+  function divisionTable({ name, rec }, wcMarks) {
     const teams = [...(rec.teamRecords || [])].sort(
       (a, b) => (Number(a.divisionRank) || 99) - (Number(b.divisionRank) || 99)
     );
@@ -756,7 +924,7 @@
         const isPad = tr.team?.id === TEAM_ID;
         const cells = SCOLS.map(([k]) => `<td>${esc(srVal(tr, k))}</td>`).join("");
         return `<tr class="${isPad ? "is-padres" : ""}">
-          <td><span class="team-cell">${tr.team?.id ? `<img src="${teamLogo(tr.team.id)}" alt="" loading="lazy"/>` : ""}${esc(tr.team?.name || "—")}</span></td>
+          <td><span class="team-cell">${tr.team?.id ? `<img src="${teamLogo(tr.team.id)}" alt="" loading="lazy"/>` : ""}${esc(tr.team?.name || "—")}${teamBadge(tr, wcMarks)}</span></td>
           ${cells}
         </tr>`;
       })
