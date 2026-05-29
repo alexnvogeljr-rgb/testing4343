@@ -164,18 +164,35 @@
       currentRoster = (data.roster || []).map((r) => {
         const blocks = r.person?.stats || [];
         const grp = (name) => blocks.find((b) => b.group?.displayName?.toLowerCase() === name);
-        const opsRaw = grp("hitting")?.splits?.[0]?.stat?.ops;
-        const eraRaw = grp("pitching")?.splits?.[0]?.stat?.era;
+        const hitStat = grp("hitting")?.splits?.[0]?.stat;
+        const pitStat = grp("pitching")?.splits?.[0]?.stat;
+        const opsRaw = hitStat?.ops;
+        const eraRaw = pitStat?.era;
         const ops = opsRaw != null && opsRaw !== "" && !Number.isNaN(parseFloat(opsRaw))
           ? parseFloat(opsRaw) : null;
         const era = eraRaw != null && eraRaw !== "" && !Number.isNaN(parseFloat(eraRaw))
           ? parseFloat(eraRaw) : null;
+
+        // Derive SP / RP / CP from usage: mostly-starts → SP; save-heavy → CP; else RP.
+        const position = r.position?.abbreviation || "";
+        const posType = r.position?.type || "";
+        let role = null;
+        if (posType === "Pitcher" || position === "P") {
+          const gp = Number(pitStat?.gamesPlayed) || 0;
+          const gs = Number(pitStat?.gamesStarted) || 0;
+          const sv = Number(pitStat?.saves) || 0;
+          if (gp && gs / gp >= 0.5) role = "SP";
+          else if (sv >= 10) role = "CP";
+          else role = "RP";
+        }
+
         return {
           id: r.person.id,
           name: r.person.fullName,
           number: r.jerseyNumber || "",
-          position: r.position?.abbreviation || "",
-          posType: r.position?.type || "",
+          position,
+          posType,
+          role,
           ops,
           opsStr: ops != null ? formatOps(opsRaw) : null,
           era,
@@ -205,11 +222,8 @@
     // One tab at a time: Hitters ranked by OPS, Pitchers ranked by ERA.
     const showingPitchers = rosterTab === "pitchers";
     const group = filtered.filter((p) => (showingPitchers ? isPitcherPlayer(p) : !isPitcherPlayer(p)));
-    if (showingPitchers) {
-      group.sort((a, b) => (a.era ?? Infinity) - (b.era ?? Infinity) || a.name.localeCompare(b.name));
-    } else {
-      group.sort((a, b) => (b.ops ?? -1) - (a.ops ?? -1) || a.name.localeCompare(b.name));
-    }
+    const byEra = (a, b) => (a.era ?? Infinity) - (b.era ?? Infinity) || a.name.localeCompare(b.name);
+    const byOps = (a, b) => (b.ops ?? -1) - (a.ops ?? -1) || a.name.localeCompare(b.name);
     els.count.textContent = String(group.length);
 
     els.list.innerHTML = "";
@@ -217,7 +231,26 @@
       els.list.innerHTML = `<div class="empty-note" style="padding:16px">No ${showingPitchers ? "pitchers" : "hitters"} match your filter.</div>`;
       return;
     }
-    group.forEach((p) => els.list.appendChild(playerRow(p, showingPitchers)));
+
+    const addGroup = (label, players) => {
+      if (!players.length) return;
+      const head = document.createElement("div");
+      head.className = "roster-group-label";
+      head.textContent = `${label} (${players.length})`;
+      els.list.appendChild(head);
+      players.forEach((p) => els.list.appendChild(playerRow(p, showingPitchers)));
+    };
+
+    if (showingPitchers) {
+      // Split into Starters and Relievers (RP + CP), each ranked by ERA.
+      const starters = group.filter((p) => p.role === "SP").sort(byEra);
+      const relievers = group.filter((p) => p.role !== "SP").sort(byEra);
+      addGroup("Starters", starters);
+      addGroup("Relievers", relievers);
+    } else {
+      group.sort(byOps);
+      group.forEach((p) => els.list.appendChild(playerRow(p, showingPitchers)));
+    }
   }
 
   function playerRow(p, showingPitchers) {
@@ -231,7 +264,7 @@
       <img class="player-avatar" src="${headshot(p.id, 80)}" alt="" loading="lazy" />
       <span>
         <span class="name">${esc(p.name)}</span><br/>
-        <span class="player-meta">${esc(p.position || "—")}${metric}</span>
+        <span class="player-meta">${esc((showingPitchers && p.role) || p.position || "—")}${metric}</span>
       </span>
       <span class="player-num">${p.number ? "#" + esc(p.number) : ""}</span>`;
     btn.addEventListener("click", () => selectPlayer(p));
