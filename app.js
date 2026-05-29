@@ -760,9 +760,9 @@
 
   // ===================== HOME (last game lineup) =====================  // Defensive position -> [left%, top%] on the field diagram (outfield at top).
   const POS_COORDS = {
-    P: [50, 60], C: [50, 89],
-    "1B": [72, 62], "2B": [61, 49], "3B": [28, 62], SS: [39, 49],
-    LF: [23, 26], CF: [50, 14], RF: [77, 26],
+    P: [50, 66], C: [50, 84], // catcher centered on home plate
+    "1B": [70, 62], "2B": [60, 52], "3B": [30, 62], SS: [40, 52],
+    LF: [24, 30], CF: [50, 22], RF: [76, 30],
   };
 
   // Build a lineup chip from a boxscore player entry.
@@ -830,6 +830,24 @@
     } catch (err) {
       setStatus(`Could not load last game: ${esc(err.message)}`, true);
     }
+  }
+
+  // Drawn outline of the outfield wall + infield (coordinates in a 0–100 square).
+  function fieldSvg() {
+    const base = (x, y, s = 1.4) =>
+      `<polygon points="${x},${y - s} ${x + s},${y} ${x},${y + s} ${x - s},${y}" fill="#fff" stroke="#b8884e" stroke-width="0.3"/>`;
+    // Home plate, then the angular outfield wall around to the right-field corner.
+    const wall = "13,33 17,20 30,12 45,9 54,9 68,12 80,18 87,38";
+    return `<svg class="field-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points="50,84 ${wall}" fill="rgba(255,255,255,0.10)"/>
+      <polyline points="${wall}" fill="none" stroke="#fff" stroke-width="1.4" stroke-linejoin="round" stroke-opacity="0.92"/>
+      <line x1="50" y1="84" x2="13" y2="33" stroke="#fff" stroke-width="1" stroke-opacity="0.85"/>
+      <line x1="50" y1="84" x2="87" y2="38" stroke="#fff" stroke-width="1" stroke-opacity="0.85"/>
+      <polygon points="50,84 64,69 50,55 36,69" fill="#cda36b" stroke="#b8884e" stroke-width="0.6"/>
+      <circle cx="50" cy="67" r="3" fill="#cda36b" stroke="#b8884e" stroke-width="0.3"/>
+      ${base(64, 69)}${base(50, 55)}${base(36, 69)}
+      <polygon points="48,83 52,83 52,85 50,86.4 48,85" fill="#fff" stroke="#b8884e" stroke-width="0.3"/>
+    </svg>`;
   }
 
   // Optional aerial/overhead image behind the lineup (configured in config.js).
@@ -913,7 +931,7 @@
     els.homeSub.textContent = `Padres ${padScore}–${oppScore} ${win ? "W" : "L"} vs ${opp.team?.name || ""}`;
     const imgLayer = fieldImageLayer();
     els.home.innerHTML = `${banner}
-      <div class="field${imgLayer ? " has-aerial" : ""}">${imgLayer}<div class="infield"></div><div class="mound"></div>${chips}</div>
+      <div class="field${imgLayer ? " has-aerial" : ""}">${fieldSvg()}${imgLayer}${chips}</div>
       ${benchHtml}
       ${winProb}`;
 

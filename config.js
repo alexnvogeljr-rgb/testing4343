@@ -24,7 +24,8 @@ window.SAVANT_PROXY = "https://padres-savant.alexnvogeljr.workers.dev";
 //   SCALE   – zoom in/out (1 = fit, >1 zooms in)
 //   OFFSET_X / OFFSET_Y – pan the photo left/right and up/down (in %)
 // ---------------------------------------------------------------------------
-window.FIELD_IMAGE = "https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=-117.157968,32.70675,-117.155232,32.70905&bboxSR=4326&size=800,800&format=jpg&transparent=false&f=image";
+// Default: drawn outfield outline (set a URL here to overlay an aerial instead).
+window.FIELD_IMAGE = "";
 window.FIELD_IMAGE_ROTATE = 0;
 window.FIELD_IMAGE_SCALE = 1.2;
 window.FIELD_IMAGE_OFFSET_X = 0;

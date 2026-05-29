@@ -590,6 +590,12 @@ svg.spray {
   transform: translate(-50%, -50%);
   background: #cda36b; border-radius: 50%;
 }
+/* Drawn outfield/infield outline (below the chips). */
+.field-svg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+}
 /* Optional aerial image layer (sits above the drawn diamond, below the chips). */
 .field-img {
   position: absolute; inset: 0;
