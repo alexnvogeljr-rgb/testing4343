@@ -149,6 +149,8 @@ html, body {
 }
 .player-row .name { font-weight: 600; font-size: 14px; }
 .player-meta { font-size: 12px; color: var(--muted); }
+.meta-ops { color: var(--brown-light); font-weight: 700; }
+.player-row.active .meta-ops { color: var(--brown); }
 .player-num {
   margin-left: auto;
   font-weight: 800;

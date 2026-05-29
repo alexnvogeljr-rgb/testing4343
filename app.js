@@ -15,6 +15,15 @@
 
   const teamLogo = (id) => `https://www.mlbstatic.com/team-logos/${id}.svg`;
 
+  // Format an OPS-like value the baseball way: 0.850 -> ".850", 1.020 -> "1.020".
+  function formatOps(v) {
+    const n = parseFloat(v);
+    if (Number.isNaN(n)) return null;
+    let s = n.toFixed(3);
+    if (s.startsWith("0.")) s = s.slice(1);
+    return s;
+  }
+
   // Division id -> {league, name, order} for grouping standings (fallback if hydrate is absent).
   const DIVISIONS = {
     201: { league: "AL", name: "AL East", order: 0 },
@@ -133,15 +142,28 @@
     loading("Loading roster…");
     try {
       const data = await fetchJSON(
-        `${API}/teams/${TEAM_ID}/roster?rosterType=${encodeURIComponent(type)}&season=${season}`
+        `${API}/teams/${TEAM_ID}/roster?rosterType=${encodeURIComponent(type)}&season=${season}` +
+        `&hydrate=person(stats(group=[hitting],type=[season],season=${season}))`
       );
-      currentRoster = (data.roster || []).map((r) => ({
-        id: r.person.id,
-        name: r.person.fullName,
-        number: r.jerseyNumber || "",
-        position: r.position?.abbreviation || "",
-        posType: r.position?.type || "",
-      }));
+      currentRoster = (data.roster || []).map((r) => {
+        // Pull season OPS from the hydrated hitting stats, if any.
+        const hit = (r.person?.stats || []).find(
+          (b) => b.group?.displayName?.toLowerCase() === "hitting"
+        );
+        const opsRaw = hit?.splits?.[0]?.stat?.ops;
+        const ops = opsRaw != null && opsRaw !== "" && !Number.isNaN(parseFloat(opsRaw))
+          ? parseFloat(opsRaw)
+          : null;
+        return {
+          id: r.person.id,
+          name: r.person.fullName,
+          number: r.jerseyNumber || "",
+          position: r.position?.abbreviation || "",
+          posType: r.position?.type || "",
+          ops,
+          opsStr: ops != null ? formatOps(opsRaw) : null,
+        };
+      });
       if (!currentRoster.length) {
         setStatus(`No players found for the ${season} ${type} roster.`);
       } else {
@@ -161,13 +183,13 @@
     );
     els.count.textContent = String(filtered.length);
 
-    const pitchers = filtered.filter((p) => p.posType === "Pitcher" || p.position === "P");
-    const others = filtered.filter((p) => !(p.posType === "Pitcher" || p.position === "P"));
+    // Eligible = has a season OPS; rank those high → low. The rest follow,
+    // ordered by jersey number then name.
     const byNumThenName = (a, b) =>
       (parseInt(a.number, 10) || 999) - (parseInt(b.number, 10) || 999) ||
       a.name.localeCompare(b.name);
-    pitchers.sort(byNumThenName);
-    others.sort(byNumThenName);
+    const eligible = filtered.filter((p) => p.ops != null).sort((a, b) => b.ops - a.ops);
+    const ineligible = filtered.filter((p) => p.ops == null).sort(byNumThenName);
 
     els.list.innerHTML = "";
     const addGroup = (label, players) => {
@@ -178,8 +200,8 @@
       els.list.appendChild(head);
       players.forEach((p) => els.list.appendChild(playerRow(p)));
     };
-    addGroup("Position Players", others);
-    addGroup("Pitchers", pitchers);
+    addGroup("Ranked by OPS", eligible);
+    addGroup("Pitchers / No OPS", ineligible);
 
     if (!filtered.length) {
       els.list.innerHTML = `<div class="empty-note" style="padding:16px">No players match your filter.</div>`;
@@ -194,7 +216,9 @@
       <img class="player-avatar" src="${headshot(p.id, 80)}" alt="" loading="lazy" />
       <span>
         <span class="name">${esc(p.name)}</span><br/>
-        <span class="player-meta">${esc(p.position || "—")}</span>
+        <span class="player-meta">${esc(p.position || "—")}${
+          p.opsStr ? ` &middot; <span class="meta-ops">OPS ${esc(p.opsStr)}</span>` : ""
+        }</span>
       </span>
       <span class="player-num">${p.number ? "#" + esc(p.number) : ""}</span>`;
     btn.addEventListener("click", () => selectPlayer(p));
@@ -227,7 +251,7 @@
     const [bioData, statsData] = await Promise.all([
       fetchJSON(`${API}/people/${id}`),
       fetchJSON(
-        `${API}/people/${id}/stats?stats=season,seasonAdvanced,expectedStatistics` +
+        `${API}/people/${id}/stats?stats=season,seasonAdvanced,expectedStatistics,yearByYear` +
         `&season=${season}&group=hitting,pitching,fielding`
       ),
     ]);
@@ -338,6 +362,32 @@
     return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${rows}</tbody></table></div>`;
   }
 
+  // Year-by-year table for the 3 seasons immediately before the selected one.
+  function recentTable(group, splits, selectedSeason) {
+    const cols = COLUMNS[group];
+    if (!cols || group === "fielding") return ""; // recent view for hitting & pitching only
+    const seasons = [...new Set(splits.map((s) => Number(s.season)).filter((y) => y < selectedSeason))]
+      .sort((a, b) => b - a)
+      .slice(0, 3);
+    if (!seasons.length) return "";
+
+    const rows = splits
+      .filter((s) => seasons.includes(Number(s.season)))
+      .sort((a, b) => Number(b.season) - Number(a.season))
+      .map((s) => {
+        const cells = cols.map(([key]) => `<td>${esc(statValue(s.stat || {}, key))}</td>`).join("");
+        return `<tr>
+          <td class="stat-key">${esc(s.season)}</td>
+          <td>${esc(s.team?.abbreviation || "—")}</td>
+          ${cells}
+        </tr>`;
+      })
+      .join("");
+
+    const header = `<tr><th>Yr</th><th>Tm</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr>`;
+    return `<div class="table-wrap"><table class="stats"><thead>${header}</thead><tbody>${rows}</tbody></table></div>`;
+  }
+
   function renderDetail(p, detail, season) {
     const { bio, groups } = detail;
     const groupsOrder = ["hitting", "pitching", "fielding"];
@@ -358,9 +408,14 @@
             ? `<h4 class="stat-sub">Expected Stats <span class="tag">Statcast</span></h4>` +
               advTable("expectedStatistics", byType.expectedStatistics)
             : "";
+          let recent = "";
+          if (byType.yearByYear) {
+            const t = recentTable(g, byType.yearByYear, Number(season));
+            if (t) recent = `<h4 class="stat-sub">Last 3 Seasons</h4>${t}`;
+          }
           return `<div class="stats-section">
             <h3>${GROUP_TITLES[g]}<span class="ctx">${season} season</span></h3>
-            ${standard}${advanced}${expected}
+            ${standard}${advanced}${expected}${recent}
           </div>`;
         })
         .join("");
