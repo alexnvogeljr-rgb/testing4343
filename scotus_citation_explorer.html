@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SCOTUS Citation Explorer</title>
+<style>
+  :root {
+    --bg: #0f1220;
+    --bg-2: #161a2e;
+    --panel: #1b203a;
+    --panel-2: #222949;
+    --line: #2c335a;
+    --ink: #e8ebff;
+    --muted: #9aa3c7;
+    --accent: #6c8cff;
+    --accent-2: #4ad6c8;
+    --warn: #ff6b8b;
+    --gold: #f2c14e;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #20264a 0%, var(--bg) 55%) fixed;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header.site {
+    position: sticky; top: 0; z-index: 30;
+    backdrop-filter: blur(10px);
+    background: rgba(15,18,32,.82);
+    border-bottom: 1px solid var(--line);
+  }
+  .head-inner {
+    max-width: 1280px; margin: 0 auto; padding: 14px 20px;
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
+  .seal {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #f6d77a, #c9972a 70%);
+    display: grid; place-items: center; color: #2a1c00; font-weight: 800;
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,.25), var(--shadow);
+    font-size: 15px; letter-spacing: .5px;
+  }
+  .brand h1 { font-size: 18px; margin: 0; line-height: 1.1; }
+  .brand p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 8px 12px; border-radius: 10px; min-width: 240px;
+  }
+  .search input {
+    border: 0; background: transparent; color: var(--ink); outline: none;
+    font-size: 14px; width: 100%;
+  }
+  .search svg { flex: 0 0 auto; opacity: .65; }
+  select.topic {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    padding: 9px 12px; border-radius: 10px; font-size: 14px; outline: none;
+    cursor: pointer;
+  }
+
+  main {
+    max-width: 1280px; margin: 0 auto; padding: 20px;
+    display: grid; grid-template-columns: 340px 1fr; gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 920px) { main { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  /* ---- Case list ---- */
+  .list-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 14px 16px 6px;
+  }
+  .list-head h2 { font-size: 14px; margin: 0; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); }
+  .sortbtns { display: flex; gap: 6px; }
+  .sortbtns button {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 8px; padding: 4px 8px; font-size: 11px; cursor: pointer;
+  }
+  .sortbtns button.active { color: var(--ink); border-color: var(--accent); background: rgba(108,140,255,.12); }
+  .case-list { max-height: calc(100vh - 200px); overflow: auto; padding: 6px; }
+  .case-list::-webkit-scrollbar { width: 10px; }
+  .case-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+  .case-item {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: transparent; color: inherit; border: 0;
+    padding: 10px 12px; border-radius: 10px; transition: background .12s;
+  }
+  .case-item:hover { background: var(--panel-2); }
+  .case-item.active { background: rgba(108,140,255,.16); box-shadow: inset 0 0 0 1px var(--accent); }
+  .ci-name { font-size: 14px; font-weight: 600; line-height: 1.25; }
+  .ci-meta { font-size: 12px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .ci-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 2px; vertical-align: middle; }
+  .empty { padding: 24px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  /* ---- Detail ---- */
+  .detail { padding: 0; overflow: hidden; }
+  .detail-pad { padding: 22px 24px; }
+  .placeholder { padding: 60px 30px; text-align: center; color: var(--muted); }
+  .placeholder .big { font-size: 16px; color: var(--ink); margin-bottom: 6px; }
+
+  .case-title { font-size: 24px; margin: 0 0 6px; line-height: 1.2; }
+  .cite-line { font-size: 14px; color: var(--muted); }
+  .cite-line b { color: var(--accent-2); font-weight: 600; }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; }
+  .tag {
+    font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+  }
+  .tag.topic { border-color: var(--accent); color: #cdd7ff; }
+  .tag.vote { color: var(--muted); }
+  .badge-over {
+    display: inline-block; margin-top: 14px; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: 8px;
+  }
+  .badge-over.overruled { background: rgba(255,107,139,.14); color: var(--warn); border: 1px solid rgba(255,107,139,.4); }
+  .badge-over.overruler { background: rgba(74,214,200,.12); color: var(--accent-2); border: 1px solid rgba(74,214,200,.4); }
+
+  .holding { margin: 18px 0 0; font-size: 15px; line-height: 1.6; color: #d8ddff; }
+
+  .rel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+  @media (max-width: 640px) { .rel-grid { grid-template-columns: 1fr; } }
+  .rel h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--muted); margin: 0 0 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .rel h3 .count { background: var(--panel-2); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+  .chip {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 9px; padding: 8px 11px; margin-bottom: 7px; font-size: 13px;
+    transition: border-color .12s, transform .05s;
+  }
+  .chip:hover { border-color: var(--accent); transform: translateX(2px); }
+  .chip .yr { color: var(--muted); font-size: 12px; }
+  .chip.over { border-color: rgba(255,107,139,.4); }
+  .rel-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+
+  /* ---- Graph ---- */
+  .graph-wrap { border-top: 1px solid var(--line); background: rgba(0,0,0,.18); }
+  .graph-head { padding: 14px 24px 0; display:flex; justify-content: space-between; align-items: center; }
+  .graph-head h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0; }
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+  svg.graph { width: 100%; height: 380px; display: block; }
+  .node-label { font-size: 11px; fill: var(--ink); pointer-events: none; }
+  .gnode { cursor: pointer; }
+  .gnode circle { transition: r .15s; }
+
+  footer { max-width: 1280px; margin: 0 auto; padding: 18px 20px 40px; color: var(--muted); font-size: 12px; }
+  footer a { color: var(--accent); }
+  .stat-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="head-inner">
+    <div class="brand">
+      <div class="seal">US</div>
+      <div>
+        <h1>SCOTUS Citation Explorer</h1>
+        <p>Explore how landmark Supreme Court decisions cite &mdash; and overturn &mdash; one another</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input id="search" type="search" placeholder="Search case name, citation, year&hellip;" autocomplete="off" />
+      </label>
+      <select id="topicFilter" class="topic"><option value="">All topics</option></select>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="list-head">
+      <h2>Cases <span id="caseCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="sortbtns">
+        <button data-sort="year" class="active">Year</button>
+        <button data-sort="name">A&ndash;Z</button>
+        <button data-sort="cited">Most cited</button>
+      </div>
+    </div>
+    <div id="caseList" class="case-list" role="list"></div>
+  </section>
+
+  <section class="panel detail">
+    <div id="detail">
+      <div class="placeholder">
+        <div class="big">Select a case to begin</div>
+        <div>Browse the list, search by name or citation, or filter by topic.<br/>
+        Click any related case to follow the citation trail.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div>An interactive, offline-friendly tour of U.S. Supreme Court precedent. Citation and
+  overruling relationships are curated from the published opinions for educational use; this is
+  not legal advice and not a substitute for primary sources such as
+  <a href="https://www.courtlistener.com" target="_blank" rel="noopener">CourtListener</a> or the
+  official <a href="https://www.supremecourt.gov" target="_blank" rel="noopener">U.S. Reports</a>.</div>
+  <div class="stat-row" id="footStats"></div>
+</footer>
+
+<script>
+/* =====================================================================
+   Dataset: landmark SCOTUS cases.
+   id      slug
+   name    short style
+   cite    U.S. Reports citation
+   year    decided
+   topic   subject area
+   vote    decision split
+   holding one-paragraph summary of the holding
+   cites   ids of in-dataset precedents this opinion relied on
+   overrules ids of in-dataset cases this opinion expressly overruled
+   ===================================================================== */
+const CASES = [
+  { id:"marbury", name:"Marbury v. Madison", cite:"5 U.S. 137", year:1803, topic:"Judicial Power", vote:"4–0",
+    holding:"Established judicial review: federal courts have the power to strike down laws that conflict with the Constitution. Chief Justice Marshall held that a provision of the Judiciary Act of 1789 was unconstitutional, declaring it 'emphatically the province and duty of the judicial department to say what the law is.'",
+    cites:[], overrules:[] },
+  { id:"mcculloch", name:"McCulloch v. Maryland", cite:"17 U.S. 316", year:1819, topic:"Federalism", vote:"7–0",
+    holding:"Upheld the implied powers of Congress under the Necessary and Proper Clause (Congress could charter a national bank) and held that states may not tax federal instruments, because 'the power to tax involves the power to destroy.'",
+    cites:["marbury"], overrules:[] },
+  { id:"dredscott", name:"Dred Scott v. Sandford", cite:"60 U.S. 393", year:1857, topic:"Civil Rights & Equality", vote:"7–2",
+    holding:"Held that people of African descent could not be U.S. citizens and that Congress lacked power to ban slavery in the territories, voiding the Missouri Compromise. Widely condemned and effectively overturned by the Thirteenth and Fourteenth Amendments.",
+    cites:["marbury"], overrules:[] },
+  { id:"plessy", name:"Plessy v. Ferguson", cite:"163 U.S. 537", year:1896, topic:"Civil Rights & Equality", vote:"7–1",
+    holding:"Upheld state-mandated racial segregation under the doctrine of 'separate but equal,' holding that segregated facilities did not violate the Equal Protection Clause so long as they were nominally equal. Justice Harlan dissented that 'our Constitution is color-blind.'",
+    cites:[], overrules:[] },
+  { id:"lochner", name:"Lochner v. New York", cite:"198 U.S. 45", year:1905, topic:"Privacy & Due Process", vote:"5–4",
+    holding:"Struck down a state law limiting bakers' working hours as violating 'liberty of contract' under substantive due process. The case became the symbol of an era of aggressive judicial protection of economic liberty, later repudiated.",
+    cites:[], overrules:[] },
+  { id:"schenck", name:"Schenck v. United States", cite:"249 U.S. 47", year:1919, topic:"Free Speech", vote:"9–0",
+    holding:"Upheld Espionage Act convictions for anti-draft leaflets, with Justice Holmes articulating the 'clear and present danger' test and the famous (dicta) line about falsely shouting fire in a theatre. Largely superseded by Brandenburg.",
+    cites:[], overrules:[] },
+  { id:"gitlow", name:"Gitlow v. New York", cite:"268 U.S. 652", year:1925, topic:"Free Speech", vote:"7–2",
+    holding:"Although it upheld the conviction, the Court assumed the First Amendment's free-speech protection applies to the states through the Fourteenth Amendment's Due Process Clause — a foundational step in the 'incorporation' doctrine.",
+    cites:["schenck"], overrules:[] },
+  { id:"whitney", name:"Whitney v. California", cite:"274 U.S. 357", year:1927, topic:"Free Speech", vote:"9–0",
+    holding:"Upheld a criminal-syndicalism conviction. Best remembered for Justice Brandeis's concurrence celebrating free speech and counter-speech ('the remedy to be applied is more speech, not enforced silence'). Overruled by Brandenburg.",
+    cites:["gitlow"], overrules:[] },
+  { id:"gobitis", name:"Minersville School District v. Gobitis", cite:"310 U.S. 586", year:1940, topic:"Religion", vote:"8–1",
+    holding:"Held that schools could compel Jehovah's Witness students to salute the flag despite religious objection. Overruled just three years later by Barnette.",
+    cites:[], overrules:[] },
+  { id:"betts", name:"Betts v. Brady", cite:"316 U.S. 455", year:1942, topic:"Criminal Procedure", vote:"6–3",
+    holding:"Held that the right to appointed counsel was not a fundamental right binding on the states in non-capital cases, leaving counsel a matter of case-by-case 'fundamental fairness.' Overruled by Gideon.",
+    cites:[], overrules:[] },
+  { id:"barnette", name:"West Virginia Bd. of Ed. v. Barnette", cite:"319 U.S. 624", year:1943, topic:"Free Speech", vote:"6–3",
+    holding:"Held that compelling students to salute the flag violates the First Amendment: 'If there is any fixed star in our constitutional constellation, it is that no official... can prescribe what shall be orthodox.' Overruled Gobitis.",
+    cites:[], overrules:["gobitis"] },
+  { id:"korematsu", name:"Korematsu v. United States", cite:"323 U.S. 214", year:1944, topic:"Civil Rights & Equality", vote:"6–3",
+    holding:"Upheld the WWII internment of Japanese Americans, applying (while purporting to use 'rigid scrutiny') extreme deference to military necessity. Repudiated by the Court in Trump v. Hawaii (2018) as 'gravely wrong the day it was decided.'",
+    cites:[], overrules:[] },
+  { id:"wolf", name:"Wolf v. Colorado", cite:"338 U.S. 25", year:1949, topic:"Criminal Procedure", vote:"6–3",
+    holding:"Held that the Fourth Amendment applies to the states, but declined to require the exclusionary rule as the remedy for state violations. The remedy question was overturned by Mapp.",
+    cites:[], overrules:[] },
+  { id:"brown", name:"Brown v. Board of Education", cite:"347 U.S. 483", year:1954, topic:"Civil Rights & Equality", vote:"9–0",
+    holding:"Held that racial segregation in public schools is inherently unequal and violates the Equal Protection Clause: 'separate educational facilities are inherently unequal.' Overruled Plessy v. Ferguson in the context of public education.",
+    cites:["plessy"], overrules:["plessy"] },
+  { id:"nyt-sullivan", name:"New York Times Co. v. Sullivan", cite:"376 U.S. 254", year:1964, topic:"Free Speech", vote:"9–0",
+    holding:"Established the 'actual malice' standard: a public official cannot recover for defamation about official conduct without proving the statement was made with knowledge of falsity or reckless disregard for the truth.",
+    cites:[], overrules:[] },
+  { id:"mapp", name:"Mapp v. Ohio", cite:"367 U.S. 643", year:1961, topic:"Criminal Procedure", vote:"6–3",
+    holding:"Held that the exclusionary rule — barring illegally obtained evidence — applies to the states through the Fourteenth Amendment. Overruled the remedial holding of Wolf v. Colorado.",
+    cites:["wolf"], overrules:["wolf"] },
+  { id:"engel", name:"Engel v. Vitale", cite:"370 U.S. 421", year:1962, topic:"Religion", vote:"6–1",
+    holding:"Held that official, state-composed prayer in public schools violates the Establishment Clause, even if the prayer is non-denominational and participation is voluntary.",
+    cites:[], overrules:[] },
+  { id:"gideon", name:"Gideon v. Wainwright", cite:"372 U.S. 335", year:1963, topic:"Criminal Procedure", vote:"9–0",
+    holding:"Held that the Sixth Amendment right to counsel is fundamental and applies to the states, requiring appointed counsel for indigent defendants in felony cases. Overruled Betts v. Brady.",
+    cites:["betts"], overrules:["betts"] },
+  { id:"griswold", name:"Griswold v. Connecticut", cite:"381 U.S. 479", year:1965, topic:"Privacy & Due Process", vote:"7–2",
+    holding:"Struck down a ban on contraceptives for married couples, recognizing a constitutional 'right to privacy' found in the 'penumbras' of several Bill of Rights guarantees. Foundational to later privacy and autonomy cases.",
+    cites:[], overrules:[] },
+  { id:"miranda", name:"Miranda v. Arizona", cite:"384 U.S. 436", year:1966, topic:"Criminal Procedure", vote:"5–4",
+    holding:"Held that police must warn suspects in custody of their rights to silence and counsel before interrogation, or statements obtained are inadmissible. Source of the 'Miranda warnings.'",
+    cites:[], overrules:[] },
+  { id:"loving", name:"Loving v. Virginia", cite:"388 U.S. 1", year:1967, topic:"Civil Rights & Equality", vote:"9–0",
+    holding:"Struck down bans on interracial marriage as violating both the Equal Protection and Due Process Clauses, holding that 'the freedom to marry' is a fundamental right.",
+    cites:["brown"], overrules:[] },
+  { id:"katz", name:"Katz v. United States", cite:"389 U.S. 347", year:1967, topic:"Criminal Procedure", vote:"7–1",
+    holding:"Held that the Fourth Amendment 'protects people, not places,' replacing the trespass test with the 'reasonable expectation of privacy' standard (Justice Harlan's concurrence). Warrantless wiretap of a phone booth was unconstitutional.",
+    cites:[], overrules:[] },
+  { id:"terry", name:"Terry v. Ohio", cite:"392 U.S. 1", year:1968, topic:"Criminal Procedure", vote:"8–1",
+    holding:"Permitted brief investigative 'stop and frisk' on reasonable suspicion — less than probable cause — for officer safety, balancing the intrusion against legitimate law-enforcement interests.",
+    cites:[], overrules:[] },
+  { id:"tinker", name:"Tinker v. Des Moines", cite:"393 U.S. 503", year:1969, topic:"Free Speech", vote:"7–2",
+    holding:"Held that students do not 'shed their constitutional rights to freedom of speech at the schoolhouse gate'; symbolic protest (black armbands) is protected unless it materially disrupts school operations.",
+    cites:[], overrules:[] },
+  { id:"brandenburg", name:"Brandenburg v. Ohio", cite:"395 U.S. 444", year:1969, topic:"Free Speech", vote:"8–0",
+    holding:"Replaced earlier speech tests with the 'imminent lawless action' standard: government may punish advocacy only where it is directed to inciting imminent lawless action and is likely to produce it. Overruled Whitney v. California.",
+    cites:["whitney","schenck"], overrules:["whitney"] },
+  { id:"nyt-us", name:"New York Times Co. v. United States", cite:"403 U.S. 713", year:1971, topic:"Free Speech", vote:"6–3",
+    holding:"The 'Pentagon Papers' case: the government failed to meet the heavy burden for prior restraint, so newspapers could publish a classified history of the Vietnam War.",
+    cites:[], overrules:[] },
+  { id:"roe", name:"Roe v. Wade", cite:"410 U.S. 113", year:1973, topic:"Privacy & Due Process", vote:"7–2",
+    holding:"Held that the constitutional right to privacy encompasses a woman's decision to have an abortion, subject to a trimester framework balancing it against state interests. Overruled by Dobbs (2022).",
+    cites:["griswold"], overrules:[] },
+  { id:"nixon", name:"United States v. Nixon", cite:"418 U.S. 683", year:1974, topic:"Judicial Power", vote:"8–0",
+    holding:"Held that executive privilege is not absolute and must yield to a specific need for evidence in a criminal trial, compelling President Nixon to release the Watergate tapes. Reaffirmed Marbury's 'province of the judiciary.'",
+    cites:["marbury"], overrules:[] },
+  { id:"bakke", name:"Regents of the Univ. of Cal. v. Bakke", cite:"438 U.S. 265", year:1978, topic:"Civil Rights & Equality", vote:"5–4",
+    holding:"Struck down rigid racial quotas in university admissions but held that race could be considered as one factor to further the educational benefits of diversity. A fractured decision with Justice Powell's controlling opinion.",
+    cites:["brown"], overrules:[] },
+  { id:"chevron", name:"Chevron U.S.A. v. NRDC", cite:"467 U.S. 837", year:1984, topic:"Administrative Law", vote:"6–0",
+    holding:"Established 'Chevron deference': when a statute is ambiguous, courts must defer to an agency's reasonable interpretation. The cornerstone of modern administrative law until it was overruled by Loper Bright (2024).",
+    cites:[], overrules:[] },
+  { id:"bowers", name:"Bowers v. Hardwick", cite:"478 U.S. 186", year:1986, topic:"Privacy & Due Process", vote:"5–4",
+    holding:"Upheld a state law criminalizing consensual same-sex sodomy, holding there was no fundamental right to engage in such conduct. Overruled by Lawrence v. Texas.",
+    cites:[], overrules:[] },
+  { id:"texas-johnson", name:"Texas v. Johnson", cite:"491 U.S. 397", year:1989, topic:"Free Speech", vote:"5–4",
+    holding:"Held that burning the American flag in political protest is expressive conduct protected by the First Amendment, and the government may not prohibit expression simply because society finds it offensive.",
+    cites:["brandenburg","tinker"], overrules:[] },
+  { id:"casey", name:"Planned Parenthood v. Casey", cite:"505 U.S. 833", year:1992, topic:"Privacy & Due Process", vote:"5–4",
+    holding:"Reaffirmed the 'essential holding' of Roe under stare decisis while replacing the trimester framework with the 'undue burden' standard for abortion regulations. Itself overruled by Dobbs.",
+    cites:["roe","griswold"], overrules:[] },
+  { id:"lawrence", name:"Lawrence v. Texas", cite:"539 U.S. 558", year:2003, topic:"Privacy & Due Process", vote:"6–3",
+    holding:"Struck down laws criminalizing consensual same-sex intimacy as a violation of the Due Process Clause's liberty guarantee. Overruled Bowers v. Hardwick: 'Bowers was not correct when it was decided.'",
+    cites:["griswold","casey","bowers"], overrules:["bowers"] },
+  { id:"grutter", name:"Grutter v. Bollinger", cite:"539 U.S. 306", year:2003, topic:"Civil Rights & Equality", vote:"5–4",
+    holding:"Upheld the University of Michigan Law School's individualized, race-conscious admissions as narrowly tailored to a compelling interest in diversity, following Justice Powell's Bakke opinion. Effectively ended by SFFA (2023).",
+    cites:["bakke","brown"], overrules:[] },
+  { id:"heller", name:"District of Columbia v. Heller", cite:"554 U.S. 570", year:2008, topic:"Second Amendment", vote:"5–4",
+    holding:"Held for the first time that the Second Amendment protects an individual right to keep and bear arms for self-defense, unconnected to militia service, and struck down D.C.'s handgun ban.",
+    cites:[], overrules:[] },
+  { id:"citizens-united", name:"Citizens United v. FEC", cite:"558 U.S. 310", year:2010, topic:"Elections", vote:"5–4",
+    holding:"Held that the First Amendment bars limits on independent political expenditures by corporations and unions, treating such spending as protected political speech.",
+    cites:["nyt-sullivan"], overrules:[] },
+  { id:"mcdonald", name:"McDonald v. City of Chicago", cite:"561 U.S. 742", year:2010, topic:"Second Amendment", vote:"5–4",
+    holding:"Held that the individual right recognized in Heller is incorporated against the states through the Fourteenth Amendment, applying the Second Amendment to state and local gun laws.",
+    cites:["heller"], overrules:[] },
+  { id:"obergefell", name:"Obergefell v. Hodges", cite:"576 U.S. 644", year:2015, topic:"Civil Rights & Equality", vote:"5–4",
+    holding:"Held that the Fourteenth Amendment requires states to license and recognize same-sex marriages, grounding the right in both due-process liberty and equal protection. Drew on the marriage and autonomy lines of cases.",
+    cites:["loving","lawrence","griswold","casey"], overrules:[] },
+  { id:"carpenter", name:"Carpenter v. United States", cite:"585 U.S. 296", year:2018, topic:"Criminal Procedure", vote:"5–4",
+    holding:"Held that accessing historical cell-site location records is a Fourth Amendment search requiring a warrant, declining to extend the third-party doctrine to the digital tracking of a person's movements. Applied Katz's privacy framework.",
+    cites:["katz"], overrules:[] },
+  { id:"dobbs", name:"Dobbs v. Jackson Women's Health Org.", cite:"597 U.S. 215", year:2022, topic:"Privacy & Due Process", vote:"6–3",
+    holding:"Held that the Constitution confers no right to abortion, returning the issue to the states. Expressly overruled both Roe v. Wade and Planned Parenthood v. Casey.",
+    cites:["roe","casey","griswold"], overrules:["roe","casey"] },
+  { id:"sffa", name:"Students for Fair Admissions v. Harvard", cite:"600 U.S. 181", year:2023, topic:"Civil Rights & Equality", vote:"6–3",
+    holding:"Held that race-conscious admissions programs at Harvard and UNC violate the Equal Protection Clause, effectively ending the diversity rationale of Grutter and Bakke in higher-education admissions.",
+    cites:["grutter","bakke","brown"], overrules:["grutter"] },
+  { id:"loper", name:"Loper Bright Enterprises v. Raimondo", cite:"603 U.S. 369", year:2024, topic:"Administrative Law", vote:"6–3",
+    holding:"Overruled Chevron, holding that courts — not agencies — must exercise independent judgment in interpreting ambiguous statutes under the Administrative Procedure Act. Ended forty years of Chevron deference.",
+    cites:["chevron","marbury"], overrules:["chevron"] },
+];
+
+/* ---------- Derived indices ---------- */
+const byId = Object.fromEntries(CASES.map(c => [c.id, c]));
+const citedBy = {};      // id -> [ids that cite it]
+const overruledBy = {};  // id -> [ids that overruled it]
+CASES.forEach(c => { citedBy[c.id] = []; overruledBy[c.id] = []; });
+CASES.forEach(c => {
+  (c.cites || []).forEach(t => { if (citedBy[t]) citedBy[t].push(c.id); });
+  (c.overrules || []).forEach(t => { if (overruledBy[t]) overruledBy[t].push(c.id); });
+});
+
+const TOPIC_COLORS = {
+  "Judicial Power":        "#6c8cff",
+  "Federalism":            "#4ad6c8",
+  "Civil Rights & Equality":"#f2c14e",
+  "Free Speech":           "#ff9f6b",
+  "Privacy & Due Process": "#c08cff",
+  "Criminal Procedure":    "#5ad19b",
+  "Second Amendment":      "#ff6b8b",
+  "Religion":              "#8fb3ff",
+  "Administrative Law":    "#d4a373",
+  "Elections":             "#9ad04a",
+};
+function topicColor(t){ return TOPIC_COLORS[t] || "#9aa3c7"; }
+
+/* ---------- State ---------- */
+let state = { query:"", topic:"", sort:"year", selected:null };
+
+/* ---------- Elements ---------- */
+const $list = document.getElementById("caseList");
+const $detail = document.getElementById("detail");
+const $search = document.getElementById("search");
+const $topic = document.getElementById("topicFilter");
+const $count = document.getElementById("caseCount");
+const $footStats = document.getElementById("footStats");
+
+/* ---------- Populate topic filter ---------- */
+[...new Set(CASES.map(c=>c.topic))].sort().forEach(t=>{
+  const o=document.createElement("option"); o.value=t; o.textContent=t; $topic.appendChild(o);
+});
+
+/* ---------- Footer stats ---------- */
+(function(){
+  const edges = CASES.reduce((n,c)=>n+(c.cites?c.cites.length:0),0);
+  const overs = CASES.reduce((n,c)=>n+(c.overrules?c.overrules.length:0),0);
+  const span = (CASES.reduce((m,c)=>Math.max(m,c.year),0)) - (CASES.reduce((m,c)=>Math.min(m,c.year),9999));
+  $footStats.innerHTML =
+    `<span><b>${CASES.length}</b> cases</span>` +
+    `<span><b>${edges}</b> citation links</span>` +
+    `<span><b>${overs}</b> overrulings</span>` +
+    `<span><b>${span}</b> years of precedent</span>`;
+})();
+
+/* ---------- Filtering & sorting ---------- */
+function filtered(){
+  const q = state.query.trim().toLowerCase();
+  let arr = CASES.filter(c=>{
+    if (state.topic && c.topic !== state.topic) return false;
+    if (!q) return true;
+    return (c.name+" "+c.cite+" "+c.year+" "+c.topic).toLowerCase().includes(q);
+  });
+  arr.sort((a,b)=>{
+    if (state.sort==="name") return a.name.localeCompare(b.name);
+    if (state.sort==="cited") return (citedBy[b.id].length - citedBy[a.id].length) || (a.year-b.year);
+    return a.year - b.year;
+  });
+  return arr;
+}
+
+/* ---------- Render list ---------- */
+function renderList(){
+  const arr = filtered();
+  $count.textContent = "("+arr.length+")";
+  $list.innerHTML = "";
+  if (!arr.length){ $list.innerHTML = '<div class="empty">No cases match your search.</div>'; return; }
+  arr.forEach(c=>{
+    const b = document.createElement("button");
+    b.className = "case-item" + (state.selected===c.id ? " active":"");
+    b.setAttribute("role","listitem");
+    const n = citedBy[c.id].length;
+    b.innerHTML =
+      `<div class="ci-name">${esc(c.name)}</div>`+
+      `<div class="ci-meta">`+
+        `<span><span class="ci-dot" style="background:${topicColor(c.topic)}"></span>${esc(c.topic)}</span>`+
+        `<span>${c.year}</span>`+
+        `<span>${esc(c.cite)}</span>`+
+        (n? `<span title="Cited by ${n} case(s) in this set">↩ ${n}</span>`:``)+
+      `</div>`;
+    b.onclick = ()=> select(c.id);
+    $list.appendChild(b);
+  });
+}
+
+/* ---------- Render detail ---------- */
+function relChip(id, opts={}){
+  const c = byId[id]; if(!c) return "";
+  const over = opts.over ? " over":"";
+  return `<button class="chip${over}" onclick="select('${id}')">`+
+    `${esc(c.name)} <span class="yr">· ${c.year}</span></button>`;
+}
+
+function renderDetail(){
+  const c = byId[state.selected];
+  if(!c){
+    $detail.innerHTML =
+      '<div class="placeholder"><div class="big">Select a case to begin</div>'+
+      '<div>Browse the list, search by name or citation, or filter by topic.<br/>'+
+      'Click any related case to follow the citation trail.</div></div>';
+    return;
+  }
+  const cites = (c.cites||[]);
+  const cb = citedBy[c.id];
+  const overruledByArr = overruledBy[c.id];
+  const overrulesArr = (c.overrules||[]);
+
+  let overBadge = "";
+  if (overruledByArr.length){
+    overBadge += `<div class="badge-over overruled">⚠ Overruled by ${overruledByArr.map(id=>esc(byId[id].name)).join(", ")}</div>`;
+  }
+  if (overrulesArr.length){
+    overBadge += `<div class="badge-over overruler">✓ Overruled ${overrulesArr.map(id=>esc(byId[id].name)).join(", ")}</div>`;
+  }
+
+  $detail.innerHTML =
+  `<div class="detail-pad">
+    <h2 class="case-title">${esc(c.name)}</h2>
+    <div class="cite-line"><b>${esc(c.cite)}</b> · Decided ${c.year}</div>
+    <div class="tags">
+      <span class="tag topic" style="border-color:${topicColor(c.topic)}">${esc(c.topic)}</span>
+      <span class="tag vote">Vote: ${esc(c.vote)}</span>
+    </div>
+    ${overBadge}
+    <p class="holding">${esc(c.holding)}</p>
+
+    <div class="rel-grid">
+      <div class="rel">
+        <h3>Cites / relies on <span class="count">${cites.length}</span></h3>
+        ${cites.length ? cites.map(id=>relChip(id,{over:overrulesArr.includes(id)})).join("")
+                       : '<div class="rel-empty">No in-set precedents recorded.</div>'}
+      </div>
+      <div class="rel">
+        <h3>Cited / overruled by <span class="count">${cb.length}</span></h3>
+        ${cb.length ? cb.map(id=>relChip(id,{over:(byId[id].overrules||[]).includes(c.id)})).join("")
+                    : '<div class="rel-empty">Not cited by another case in this set.</div>'}
+      </div>
+    </div>
+  </div>
+  <div class="graph-wrap">
+    <div class="graph-head">
+      <h3>Citation network</h3>
+      <div class="legend">
+        <span><i style="border-color:var(--accent)"></i>cites</span>
+        <span><i style="border-color:var(--warn);border-top-style:dashed"></i>overrules</span>
+      </div>
+    </div>
+    <svg class="graph" id="graph"></svg>
+  </div>`;
+
+  drawGraph(c);
+}
+
+/* ---------- Graph (radial: selected case at center) ---------- */
+function drawGraph(c){
+  const svg = document.getElementById("graph");
+  if(!svg) return;
+  const W = svg.clientWidth || 820, H = 380;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const cx = W/2, cy = H/2;
+  const neighbors = [];
+  (c.cites||[]).forEach(id=> neighbors.push({id, dir:"out", over:(c.overrules||[]).includes(id)}));
+  citedBy[c.id].forEach(id=> neighbors.push({id, dir:"in", over:(byId[id].overrules||[]).includes(c.id)}));
+  // de-dup (a case could appear once each direction; keep both is fine, but avoid exact dupes)
+  const seen=new Set(); const nodes=[];
+  neighbors.forEach(n=>{ const k=n.id+n.dir; if(!seen.has(k)){seen.add(k); nodes.push(n);} });
+
+  const R = Math.min(W,H)/2 - 60;
+  const N = nodes.length || 1;
+  let svgEls = "";
+
+  // edges first
+  nodes.forEach((n,i)=>{
+    const ang = (-Math.PI/2) + (i*(2*Math.PI/N));
+    const x = cx + R*Math.cos(ang), y = cy + R*Math.sin(ang);
+    n._x=x; n._y=y; n._ang=ang;
+    const color = n.over ? "var(--warn)" : "var(--accent)";
+    const dash = n.over ? '6 5' : '0';
+    // arrow direction: out = center -> node (center cites node); in = node -> center
+    const from = n.dir==="out" ? [cx,cy] : [x,y];
+    const to   = n.dir==="out" ? [x,y]   : [cx,cy];
+    svgEls += `<line x1="${from[0]}" y1="${from[1]}" x2="${to[0]}" y2="${to[1]}" stroke="${color}" stroke-width="1.6" stroke-dasharray="${dash}" opacity=".7" marker-end="url(#arrow${n.over?'-w':''})"/>`;
+  });
+
+  // center node
+  svgEls += nodeMarkup(cx, cy, c, true);
+  // neighbor nodes
+  nodes.forEach(n=>{ svgEls += nodeMarkup(n._x, n._y, byId[n.id], false, n._ang); });
+
+  svg.innerHTML =
+    `<defs>
+       <marker id="arrow" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth">
+         <path d="M0,0 L7,3 L0,6 Z" fill="var(--accent)"/></marker>
+       <marker id="arrow-w" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth">
+         <path d="M0,0 L7,3 L0,6 Z" fill="var(--warn)"/></marker>
+     </defs>` + svgEls;
+}
+
+function nodeMarkup(x,y,c,center,ang){
+  const r = center ? 13 : 9;
+  const col = topicColor(c.topic);
+  // label placement: center below; neighbors radially outward
+  let lx=x, ly=y+ (center? 30 : 0), anchor="middle";
+  if(!center && ang!==undefined){
+    const out = 16;
+    lx = x + Math.cos(ang)*out; ly = y + Math.sin(ang)*out + 4;
+    anchor = Math.cos(ang) > .25 ? "start" : (Math.cos(ang) < -.25 ? "end" : "middle");
+  }
+  const short = c.name.replace(/ v\. /," v. ");
+  const label = short.length>26 ? short.slice(0,24)+"…" : short;
+  return `<g class="gnode" onclick="select('${c.id}')">`+
+    `<circle cx="${x}" cy="${y}" r="${r}" fill="${col}" stroke="#0f1220" stroke-width="${center?3:2}"${center?' filter="url(#none)"':''}/>`+
+    (center? `<circle cx="${x}" cy="${y}" r="${r+5}" fill="none" stroke="${col}" stroke-width="1.5" opacity=".45"/>`:``)+
+    `<text class="node-label" x="${lx}" y="${ly}" text-anchor="${anchor}" font-weight="${center?700:500}">${esc(label)}</text>`+
+    `<text class="node-label" x="${lx}" y="${ly+13}" text-anchor="${anchor}" opacity=".6">${c.year}</text>`+
+    `</g>`;
+}
+
+/* ---------- Select ---------- */
+function select(id){
+  state.selected = id;
+  renderList();
+  renderDetail();
+  if (history.replaceState) history.replaceState(null,"","#"+id);
+  const top = document.querySelector("main");
+  if (window.innerWidth <= 920 && top) document.querySelector(".detail").scrollIntoView({behavior:"smooth", block:"start"});
+}
+window.select = select;
+
+/* ---------- Utils ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+/* ---------- Events ---------- */
+$search.addEventListener("input", e=>{ state.query=e.target.value; renderList(); });
+$topic.addEventListener("change", e=>{ state.topic=e.target.value; renderList(); });
+document.querySelectorAll(".sortbtns button").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    document.querySelectorAll(".sortbtns button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active"); state.sort=b.dataset.sort; renderList();
+  });
+});
+window.addEventListener("resize", ()=>{ if(state.selected) drawGraph(byId[state.selected]); });
+
+/* ---------- Init ---------- */
+renderList();
+const fromHash = location.hash.replace("#","");
+if (fromHash && byId[fromHash]) select(fromHash);
+else renderDetail();
+</script>
+</body>
+</html>
